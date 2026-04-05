@@ -1,19 +1,16 @@
 import { NextResponse } from 'next/server';
-import pdf from 'pdf-parse';
+const pdf = require('pdf-parse'); // FIX: Changed from 'import' to 'require'
 
 export async function POST(req: Request) {
   try {
-    // 1. Receive the PDF file from the frontend
     const formData = await req.formData();
     const file = formData.get('file') as File;
     if (!file) throw new Error("No file uploaded");
 
-    // 2. Convert the PDF into raw text
     const buffer = Buffer.from(await file.arrayBuffer());
     const pdfData = await pdf(buffer);
     const text = pdfData.text;
 
-    // 3. Send the text to OpenAI
     const prompt = `
       You are an expert Commercial Real Estate attorney and lease abstractor. 
       Read the following lease text and extract the key data points. 
