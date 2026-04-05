@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
-const pdf = require('pdf-parse'); // FIX: Changed from 'import' to 'require'
 
 export async function POST(req: Request) {
   try {
+    // FIX: Moved inside the function so Vercel ignores it during the build
+    const pdf = require('pdf-parse'); 
+
     const formData = await req.formData();
     const file = formData.get('file') as File;
     if (!file) throw new Error("No file uploaded");
