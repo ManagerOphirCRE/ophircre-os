@@ -3,12 +3,10 @@ import { useState } from 'react'
 import { supabase } from '@/app/utils/supabase'
 
 export default function AIAuditorPage() {
-  const [anomalies, setAnomalies] = useState<any[]>([])
+  const[anomalies, setAnomalies] = useState<any[]>([])
   const [isScanning, setIsScanning] = useState(false)
-  const[lastScanDate, setLastScanDate] = useState<string | null>(null)
-  
-  // NEW: Diagnostic state to help us debug!
-  const [debugLog, setDebugLog] = useState<string>('')
+  const [lastScanDate, setLastScanDate] = useState<string | null>(null)
+  const[debugLog, setDebugLog] = useState<string>('')
 
   async function runAudit() {
     setIsScanning(true)
@@ -33,21 +31,31 @@ export default function AIAuditorPage() {
         return
       }
 
-      // Let's make the filter more forgiving (case-insensitive for 'Expense')
-      const validEntries = entries.filter(e => {
-        const isExpense = e.chart_of_accounts?.account_type?.toLowerCase() === 'expense'
-        const hasProperty = !!e.properties?.name
-        const hasDate = !!e.transactions?.date
-        return isExpense && hasProperty && hasDate
+      // FIX: Added ': any' to completely bypass TypeScript's strict checking here
+      const validEntries = entries.filter((e: any) => {
+        // Handle both object and array returns from Supabase just to be hyper-safe
+        const accType = Array.isArray(e.chart_of_accounts) ? e.chart_of_accounts[0]?.account_type : e.chart_of_accounts?.account_type
+        const isExpense = accType?.toLowerCase() === 'expense'
+        
+        const propName = Array.isArray(e.properties) ? e.properties[0]?.name : e.properties?.name
+        const txnDate = Array.isArray(e.transactions) ? e.transactions[0]?.date : e.transactions?.date
+        
+        return isExpense && !!propName && !!txnDate
       })
 
       setDebugLog(`Database has ${entries.length} total entries. Found ${validEntries.length} valid expense entries tied to a property.`)
 
-      validEntries.sort((a, b) => new Date(b.transactions.date).getTime() - new Date(a.transactions.date).getTime())
+      validEntries.sort((a: any, b: any) => {
+        const dateA = Array.isArray(a.transactions) ? a.transactions[0].date : a.transactions.date
+        const dateB = Array.isArray(b.transactions) ? b.transactions[0].date : b.transactions.date
+        return new Date(dateB).getTime() - new Date(dateA).getTime()
+      })
 
       const groups: Record<string, any[]> = {}
-      validEntries.forEach(entry => {
-        const key = `${entry.properties.name}_${entry.chart_of_accounts.name}`
+      validEntries.forEach((entry: any) => {
+        const propName = Array.isArray(entry.properties) ? entry.properties[0].name : entry.properties.name
+        const accName = Array.isArray(entry.chart_of_accounts) ? entry.chart_of_accounts[0].name : entry.chart_of_accounts.name
+        const key = `${propName}_${accName}`
         if (!groups[key]) groups[key] = []
         groups[key].push(entry)
       })
@@ -61,17 +69,22 @@ export default function AIAuditorPage() {
         const recentBill = group[0] 
         const olderBills = group.slice(1) 
         
-        const totalOld = olderBills.reduce((sum, e) => sum + Number(e.debit), 0)
+        const totalOld = olderBills.reduce((sum: number, e: any) => sum + Number(e.debit), 0)
         const historicalAverage = totalOld / olderBills.length
         const threshold = historicalAverage * 1.20
 
         if (Number(recentBill.debit) > threshold) {
           const variancePercent = (((Number(recentBill.debit) - historicalAverage) / historicalAverage) * 100).toFixed(0)
+          
+          const propName = Array.isArray(recentBill.properties) ? recentBill.properties[0].name : recentBill.properties.name
+          const accName = Array.isArray(recentBill.chart_of_accounts) ? recentBill.chart_of_accounts[0].name : recentBill.chart_of_accounts.name
+          const txnDate = Array.isArray(recentBill.transactions) ? recentBill.transactions[0].date : recentBill.transactions.date
+
           detectedAnomalies.push({
             id: Math.random().toString(),
-            property: recentBill.properties.name,
-            category: recentBill.chart_of_accounts.name,
-            date: recentBill.transactions.date,
+            property: propName,
+            category: accName,
+            date: txnDate,
             description: recentBill.description,
             amount: Number(recentBill.debit),
             average: historicalAverage,
@@ -145,7 +158,6 @@ export default function AIAuditorPage() {
           </div>
         )}
 
-        {/* DIAGNOSTIC BOX */}
         {debugLog && (
           <div className="mt-8 p-4 bg-slate-800 text-green-400 font-mono text-xs rounded-lg">
             <strong>Diagnostic Log:</strong><br/>
