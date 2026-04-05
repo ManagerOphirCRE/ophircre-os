@@ -1,11 +1,24 @@
-<nav className="flex-1 px-4 space-y-2 mt-4">
-              <a href="/" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">Dashboard</a>
-              <a href="/properties" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">Properties</a>
-              <a href="/tenants" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">Tenants & Leases</a>
-              <a href="/lease-drafter" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">Lease Drafter</a>
-              <a href="/ai-scanner" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">AI Lease Scanner</a>
-              <a href="/communications" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">Communications</a>
-              <a href="/tasks" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">Task Board</a>
-              <a href="/documents" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">Filing Cabinet</a>
-              <a href="/financials" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">Financials</a>
-            </nav>
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Vendor Portal | OphirCRE",
+};
+
+export default function VendorLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <header className="bg-slate-900 text-white px-8 py-4 flex justify-between items-center shadow-md">
+        <div>
+          <h1 className="text-xl font-bold tracking-wider">OphirCRE</h1>
+          <p className="text-xs text-slate-400 uppercase tracking-widest">Vendor Access Portal</p>
+        </div>
+        <div className="text-sm font-medium text-slate-300">
+          Accounts Payable & Compliance
+        </div>
+      </header>
+      <main className="flex-1 max-w-4xl w-full mx-auto p-8">
+        {children}
+      </main>
+    </div>
+  );
+}
