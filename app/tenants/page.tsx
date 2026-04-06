@@ -3,8 +3,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/app/utils/supabase'
 
 export default function TenantsPage() {
-  const [tenants, setTenants] = useState<any[]>([])
-  const[isModalOpen, setIsModalOpen] = useState(false)
+  const[tenants, setTenants] = useState<any[]>([])
+  const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
   // Form State
@@ -60,15 +60,25 @@ export default function TenantsPage() {
         </button>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-8 relative">
+      <main className="flex-1 overflow-y-auto p-8 relative bg-gray-100">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
-              <tr key={tenant.id} onClick={() => window.location.href = `/tenants/${tenant.id}`} className="hover:bg-blue-50 cursor-pointer transition">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tenant Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Entity Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact Email</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+              </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {tenants && tenants.length > 0 ? tenants.map((tenant) => (
-                <tr key={tenant.id} className="hover:bg-gray-50">
+                <tr 
+                  key={tenant.id} 
+                  onClick={() => window.location.href = `/tenants/${tenant.id}`} 
+                  className="hover:bg-blue-50 cursor-pointer transition"
+                >
                   <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{tenant.name}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{tenant.entity_type || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{tenant.contact_email || '-'}</td>
