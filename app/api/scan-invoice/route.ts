@@ -1,48 +1,34 @@
 import { NextResponse } from 'next/server';
+import pdf from 'pdf-parse';
 
 export async function POST(req: Request) {
   try {
-    // FIX: Moved inside the function so Vercel ignores it during the build
-    const pdf = require('pdf-parse'); 
-
     const formData = await req.formData();
     const file = formData.get('file') as File;
     if (!file) throw new Error("No file uploaded");
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const isImage = file.type.startsWith('image/');
-    
-    let messagesContent: any[] =[];
+    const pdfData = await pdf(buffer);
+    const text = pdfData.text;
 
-    const promptText = `
+    const prompt = `
       You are an expert Commercial Real Estate accountant. 
-      Read this invoice or mortgage statement and extract the key financial data. 
+      Read the following invoice or mortgage statement and extract the key financial data. 
       Return ONLY a valid JSON object with these exact keys. If a value is not found, leave it as an empty string (or 0 for numbers).
       {
         "payee_name": "Name of the vendor, lender, or billing company",
-        "date": "YYYY-MM-DD",
+        "date": "YYYY-MM-DD (The statement date or due date)",
         "total_amount": numeric value only,
         "is_mortgage": boolean (true ONLY if this is a mortgage/loan statement),
         "principal_amount": numeric value (if mortgage),
         "interest_amount": numeric value (if mortgage),
         "escrow_amount": numeric value (if mortgage),
-        "description": "Brief 3-5 word summary of the bill"
+        "description": "Brief 3-5 word summary of the bill (e.g., Monthly Landscaping, Mortgage Payment)"
       }
+      
+      DOCUMENT TEXT TO SCAN:
+      ${text}
     `;
-
-    if (isImage) {
-      const base64Image = buffer.toString('base64');
-      const dataUri = `data:${file.type};base64,${base64Image}`;
-      messagesContent =[
-        { type: "text", text: promptText },
-        { type: "image_url", image_url: { url: dataUri } }
-      ];
-    } else {
-      const pdfData = await pdf(buffer);
-      messagesContent =[
-        { type: "text", text: promptText + `\n\nDOCUMENT TEXT:\n${pdfData.text}` }
-      ];
-    }
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -52,7 +38,7 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: messagesContent }],
+        messages:[{ role: 'user', content: prompt }],
         temperature: 0.1,
         response_format: { type: "json_object" }
       })

@@ -5,20 +5,17 @@ import { supabase } from '@/app/utils/supabase'
 export default function AIScannerPage() {
   const [activeTab, setActiveTab] = useState('lease') // 'lease' or 'invoice'
   
-  // Global Data for Invoices
   const [accounts, setAccounts] = useState<any[]>([])
   const [properties, setProperties] = useState<any[]>([])
 
-  // Lease State
-  const[leaseFile, setLeaseFile] = useState<File | null>(null)
+  const [leaseFile, setLeaseFile] = useState<File | null>(null)
   const [isScanningLease, setIsScanningLease] = useState(false)
   const [extractedLease, setExtractedLease] = useState<any>(null)
 
-  // Invoice State
-  const [invoiceFile, setInvoiceFile] = useState<File | null>(null)
-  const [isScanningInvoice, setIsScanningInvoice] = useState(false)
-  const[extractedInvoice, setExtractedInvoice] = useState<any>(null)
-  const[selectedProperty, setSelectedProperty] = useState('')
+  const[invoiceFile, setInvoiceFile] = useState<File | null>(null)
+  const[isScanningInvoice, setIsScanningInvoice] = useState(false)
+  const [extractedInvoice, setExtractedInvoice] = useState<any>(null)
+  const [selectedProperty, setSelectedProperty] = useState('')
 
   useEffect(() => {
     async function fetchData() {
@@ -30,7 +27,6 @@ export default function AIScannerPage() {
     fetchData()
   },[])
 
-  // --- LEASE LOGIC ---
   async function handleScanLease() {
     if (!leaseFile) return alert("Please select a PDF lease.")
     setIsScanningLease(true); setExtractedLease(null)
@@ -54,9 +50,8 @@ export default function AIScannerPage() {
     } catch (error: any) { alert("Database Error: " + error.message) }
   }
 
-  // --- INVOICE / MORTGAGE LOGIC ---
   async function handleScanInvoice() {
-    if (!invoiceFile) return alert("Please select a PDF invoice or statement.")
+    if (!invoiceFile) return alert("Please select a PDF or Image.")
     setIsScanningInvoice(true); setExtractedInvoice(null)
     try {
       const formData = new FormData(); formData.append('file', invoiceFile)
@@ -72,7 +67,6 @@ export default function AIScannerPage() {
     if (!selectedProperty) return alert("Please select which property this bill belongs to.")
 
     try {
-      // 1. Save main transaction
       const { data: txnData, error: txnErr } = await supabase.from('transactions').insert([{
         date: extractedInvoice.date || new Date().toISOString().split('T')[0],
         description: extractedInvoice.payee_name,
@@ -81,11 +75,9 @@ export default function AIScannerPage() {
       }]).select().single()
       if (txnErr) throw txnErr
 
-      // 2. Draft the Journal Entries (Splits)
       const journalEntries =[]
       
       if (extractedInvoice.is_mortgage) {
-        // Mortgage Split Logic
         const principalAcc = accounts.find(a => a.name.includes('Mortgage Payable'))?.id
         const interestAcc = accounts.find(a => a.name.includes('Interest'))?.id || accounts.find(a => a.account_type === 'Expense')?.id
         const escrowAcc = accounts.find(a => a.name.includes('Tax') || a.name.includes('Insurance'))?.id || accounts.find(a => a.account_type === 'Expense')?.id
@@ -94,8 +86,7 @@ export default function AIScannerPage() {
         if (extractedInvoice.interest_amount > 0) journalEntries.push({ transaction_id: txnData.id, account_id: interestAcc, property_id: selectedProperty, description: 'Interest Payment', debit: Number(extractedInvoice.interest_amount) })
         if (extractedInvoice.escrow_amount > 0) journalEntries.push({ transaction_id: txnData.id, account_id: escrowAcc, property_id: selectedProperty, description: 'Escrow Payment', debit: Number(extractedInvoice.escrow_amount) })
       } else {
-        // Standard Vendor Invoice Logic
-        const expenseAcc = accounts.find(a => a.account_type === 'Expense')?.id // Grabs a default expense account
+        const expenseAcc = accounts.find(a => a.account_type === 'Expense')?.id
         journalEntries.push({ transaction_id: txnData.id, account_id: expenseAcc, property_id: selectedProperty, description: extractedInvoice.description, debit: Number(extractedInvoice.total_amount) })
       }
 
@@ -118,35 +109,24 @@ export default function AIScannerPage() {
       </header>
 
       <main className="flex-1 overflow-y-auto p-8 flex space-x-6 bg-gray-100">
-        
-        {/* LEFT COLUMN: Upload */}
         <div className="w-1/2 bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col h-[calc(100vh-120px)]">
-          <h3 className="font-bold text-gray-800 mb-2">1. Upload PDF {activeTab === 'lease' ? 'Lease' : 'Statement'}</h3>
-          <p className="text-sm text-gray-500 mb-4">Select a PDF file. The AI will extract the data automatically.</p>
-          
+          <h3 className="font-bold text-gray-800 mb-2">1. Upload {activeTab === 'lease' ? 'Lease' : 'Statement'}</h3>
           <div className="flex-1 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center bg-gray-50 p-6">
             <input 
-              type="file" accept=".pdf" 
+              type="file" 
+              accept={activeTab === 'lease' ? ".pdf" : ".pdf,image/png,image/jpeg,image/jpg"} 
               onChange={(e) => activeTab === 'lease' ? setLeaseFile(e.target.files?.[0] || null) : setInvoiceFile(e.target.files?.[0] || null)} 
               className="mb-4" 
             />
-            {(activeTab === 'lease' ? leaseFile : invoiceFile) && <p className="text-green-600 font-medium text-sm">Selected: {(activeTab === 'lease' ? leaseFile : invoiceFile)?.name}</p>}
           </div>
-          
-          <button 
-            onClick={activeTab === 'lease' ? handleScanLease : handleScanInvoice} 
-            disabled={(activeTab === 'lease' ? (isScanningLease || !leaseFile) : (isScanningInvoice || !invoiceFile))} 
-            className={`w-full mt-4 py-3 rounded-lg font-bold text-white transition shadow-sm ${(activeTab === 'lease' ? (isScanningLease || !leaseFile) : (isScanningInvoice || !invoiceFile)) ? 'bg-purple-400' : 'bg-purple-600 hover:bg-purple-700'}`}
-          >
-            {(activeTab === 'lease' ? isScanningLease : isScanningInvoice) ? '🤖 AI is reading PDF...' : '✨ Scan PDF with AI'}
+          <button onClick={activeTab === 'lease' ? handleScanLease : handleScanInvoice} disabled={activeTab === 'lease' ? (isScanningLease || !leaseFile) : (isScanningInvoice || !invoiceFile)} className={`w-full mt-4 py-3 rounded-lg font-bold text-white transition shadow-sm ${activeTab === 'lease' ? (isScanningLease || !leaseFile) : (isScanningInvoice || !invoiceFile) ? 'bg-purple-400' : 'bg-purple-600 hover:bg-purple-700'}`}>
+            {activeTab === 'lease' ? (isScanningLease ? 'Reading...' : 'Scan Lease') : (isScanningInvoice ? 'Reading...' : 'Scan Invoice')}
           </button>
         </div>
 
-        {/* RIGHT COLUMN: Results */}
         <div className="w-1/2 bg-white rounded-xl shadow-sm border border-gray-200 p-6 h-fit">
           <h3 className="font-bold text-gray-800 mb-4">2. Review & Approve</h3>
           
-          {/* LEASE RESULTS */}
           {activeTab === 'lease' && extractedLease && (
             <div className="space-y-4">
               <div><label className="block text-sm font-medium text-gray-700">Tenant Name</label><input type="text" className="w-full border p-2 rounded bg-gray-50 font-medium" value={extractedLease.tenant_name} readOnly /></div>
@@ -155,23 +135,19 @@ export default function AIScannerPage() {
                 <div><label className="block text-sm font-medium text-gray-700">End Date</label><input type="text" className="w-full border p-2 rounded bg-gray-50" value={extractedLease.end_date} readOnly /></div>
               </div>
               <div><label className="block text-sm font-medium text-gray-700">Base Rent ($)</label><input type="text" className="w-full border p-2 rounded bg-gray-50 font-bold text-green-700" value={extractedLease.base_rent} readOnly /></div>
-              <div><label className="block text-sm font-medium text-gray-700">CAM / NNN Provisions</label><textarea className="w-full border p-2 rounded bg-gray-50 h-24 resize-none text-sm" value={extractedLease.cam_provisions} readOnly /></div>
+              <div><label className="block text-sm font-medium text-gray-700">CAM Provisions</label><textarea className="w-full border p-2 rounded bg-gray-50 h-24 resize-none text-sm" value={extractedLease.cam_provisions} readOnly /></div>
               <button onClick={saveLeaseToDatabase} className="w-full mt-6 bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold transition shadow-sm">Approve & Save Lease</button>
             </div>
           )}
 
-          {/* INVOICE RESULTS */}
           {activeTab === 'invoice' && extractedInvoice && (
             <div className="space-y-4">
               {extractedInvoice.is_mortgage && <div className="bg-blue-100 text-blue-800 p-2 rounded text-sm font-bold text-center mb-4">🏦 Mortgage Statement Detected</div>}
-              
               <div><label className="block text-sm font-medium text-gray-700">Payee / Lender</label><input type="text" className="w-full border p-2 rounded bg-gray-50 font-medium" value={extractedInvoice.payee_name} readOnly /></div>
-              
               <div className="grid grid-cols-2 gap-4">
                 <div><label className="block text-sm font-medium text-gray-700">Date</label><input type="text" className="w-full border p-2 rounded bg-gray-50" value={extractedInvoice.date} readOnly /></div>
                 <div><label className="block text-sm font-medium text-gray-700">Total Amount ($)</label><input type="text" className="w-full border p-2 rounded bg-gray-50 font-bold text-red-600" value={extractedInvoice.total_amount} readOnly /></div>
               </div>
-
               {extractedInvoice.is_mortgage && (
                 <div className="grid grid-cols-3 gap-2 bg-gray-50 p-3 rounded border border-gray-200">
                   <div><label className="block text-xs font-medium text-gray-500">Principal</label><input type="text" className="w-full border p-1 rounded text-sm bg-white" value={extractedInvoice.principal_amount} readOnly /></div>
@@ -179,9 +155,7 @@ export default function AIScannerPage() {
                   <div><label className="block text-xs font-medium text-gray-500">Escrow</label><input type="text" className="w-full border p-1 rounded text-sm bg-white" value={extractedInvoice.escrow_amount} readOnly /></div>
                 </div>
               )}
-
               <div><label className="block text-sm font-medium text-gray-700">Description</label><input type="text" className="w-full border p-2 rounded bg-gray-50 text-sm" value={extractedInvoice.description} readOnly /></div>
-              
               <div className="pt-4 border-t border-gray-200">
                 <label className="block text-sm font-bold text-blue-600 mb-1">Assign to Property *</label>
                 <select className="w-full border-2 border-blue-200 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={selectedProperty} onChange={(e) => setSelectedProperty(e.target.value)}>
@@ -189,19 +163,10 @@ export default function AIScannerPage() {
                   {properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
-
               <button onClick={saveInvoiceToDatabase} className="w-full mt-6 bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold transition shadow-sm">Post to General Ledger</button>
             </div>
           )}
-
-          {/* EMPTY STATE */}
-          {((activeTab === 'lease' && !extractedLease) || (activeTab === 'invoice' && !extractedInvoice)) && (
-            <div className="h-64 flex items-center justify-center border-2 border-dashed border-gray-200 rounded-lg">
-              <p className="text-gray-400 text-center">Awaiting document scan...<br/>Results will appear here.</p>
-            </div>
-          )}
         </div>
-
       </main>
     </>
   )
