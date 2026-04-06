@@ -8,27 +8,42 @@ export async function POST(req: Request) {
     if (!file) throw new Error("No file uploaded");
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const pdfData = await pdf(buffer);
-    const text = pdfData.text;
+    const isImage = file.type.startsWith('image/');
+    
+    let messagesContent: any[] =[];
 
-    const prompt = `
+    const promptText = `
       You are an expert Commercial Real Estate accountant. 
-      Read the following invoice or mortgage statement and extract the key financial data. 
+      Read this invoice or mortgage statement and extract the key financial data. 
       Return ONLY a valid JSON object with these exact keys. If a value is not found, leave it as an empty string (or 0 for numbers).
       {
         "payee_name": "Name of the vendor, lender, or billing company",
-        "date": "YYYY-MM-DD (The statement date or due date)",
+        "date": "YYYY-MM-DD",
         "total_amount": numeric value only,
         "is_mortgage": boolean (true ONLY if this is a mortgage/loan statement),
         "principal_amount": numeric value (if mortgage),
         "interest_amount": numeric value (if mortgage),
         "escrow_amount": numeric value (if mortgage),
-        "description": "Brief 3-5 word summary of the bill (e.g., Monthly Landscaping, Mortgage Payment)"
+        "description": "Brief 3-5 word summary of the bill"
       }
-      
-      DOCUMENT TEXT TO SCAN:
-      ${text}
     `;
+
+    if (isImage) {
+      // If it's an image, convert it to Base64 so the AI can "see" it
+      const base64Image = buffer.toString('base64');
+      const dataUri = `data:${file.type};base64,${base64Image}`;
+      
+      messagesContent =[
+        { type: "text", text: promptText },
+        { type: "image_url", image_url: { url: dataUri } }
+      ];
+    } else {
+      // If it's a PDF, extract the text normally
+      const pdfData = await pdf(buffer);
+      messagesContent =[
+        { type: "text", text: promptText + `\n\nDOCUMENT TEXT:\n${pdfData.text}` }
+      ];
+    }
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -38,7 +53,7 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        messages:[{ role: 'user', content: prompt }],
+        messages:[{ role: 'user', content: messagesContent }],
         temperature: 0.1,
         response_format: { type: "json_object" }
       })

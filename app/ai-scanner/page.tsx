@@ -114,7 +114,7 @@ export default function AIScannerPage() {
           <div className="flex-1 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center bg-gray-50 p-6">
             <input 
               type="file" 
-              accept={activeTab === 'lease' ? ".pdf" : ".pdf,image/png,image/jpeg,image/jpg"} 
+              accept=".pdf,image/png,image/jpeg,image/jpg" 
               onChange={(e) => activeTab === 'lease' ? setLeaseFile(e.target.files?.[0] || null) : setInvoiceFile(e.target.files?.[0] || null)} 
               className="mb-4" 
             />

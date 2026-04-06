@@ -44,7 +44,7 @@ export default function PropertiesPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
-              <tr>
+              <tr key={property.id} onClick={() => window.location.href = `/properties/${property.id}`} className="hover:bg-blue-50 cursor-pointer transition">
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Property Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total SqFt</th>
