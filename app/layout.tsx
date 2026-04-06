@@ -48,22 +48,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   // SECURITY LOGIC: Define which links assistants are allowed to see
   const NAV_LINKS =[
-    { name: 'Dashboard', path: '/', allowed: ['admin', 'assistant'] },
-    { name: 'Properties', path: '/properties', allowed: ['admin', 'assistant'] },
-    { name: 'Tenants & Leases', path: '/tenants', allowed: ['admin', 'assistant'] },
-    { name: 'Leasing Pipeline', path: '/leasing', allowed: ['admin', 'assistant'] },
-    { name: 'Lease Drafter', path: '/lease-drafter', allowed: ['admin', 'assistant'] },
-    { name: 'Communications', path: '/communications', allowed: ['admin', 'assistant'] },
-    { name: 'Task Board', path: '/tasks', allowed: ['admin', 'assistant'] },
-    { name: 'Filing Cabinet', path: '/documents', allowed: ['admin', 'assistant'] },
-    { name: 'AI Scanner', path: '/ai-scanner', allowed: ['admin'] },
-    { name: 'AI Auditor', path: '/ai-auditor', allowed: ['admin'] },
-    { name: 'CAM Reconciliations', path: '/cam-reconciliation', allowed: ['admin'] },
-    { name: '📊 Reports & P&L', path: '/reports', allowed: ['admin'] },
-    { name: 'Financials', path: '/financials', allowed: ['admin'] },
-    { name: 'Accounts Payable', path: '/accounts-payable', allowed: ['admin'] },
-    { name: '⚙️ Settings', path: '/settings', allowed: ['admin'] }
-  ];
+  { name: 'Dashboard', path: '/', allowed: ['admin', 'assistant'] },
+  { name: 'Properties', path: '/properties', allowed: ['admin', 'assistant'] },
+  { name: 'Tenants & Leases', path: '/tenants', allowed: ['admin', 'assistant'] },
+  { name: 'Vendors', path: '/vendors', allowed: ['admin', 'assistant'] }, // <-- NEW LINK
+  { name: 'Leasing Pipeline', path: '/leasing', allowed: ['admin', 'assistant'] },
+  { name: 'Lease Drafter', path: '/lease-drafter', allowed: ['admin', 'assistant'] },
+  { name: 'Communications', path: '/communications', allowed: ['admin', 'assistant'] },
+  { name: 'Task Board', path: '/tasks', allowed: ['admin', 'assistant'] },
+  { name: 'Filing Cabinet', path: '/documents', allowed: ['admin', 'assistant'] },
+  { name: 'AI Scanner', path: '/ai-scanner', allowed: ['admin'] },
+  { name: 'AI Auditor', path: '/ai-auditor', allowed: ['admin'] },
+  { name: 'CAM Reconciliations', path: '/cam-reconciliation', allowed: ['admin'] },
+  { name: '📊 Reports & P&L', path: '/reports', allowed: ['admin'] },
+  { name: 'Financials', path: '/financials', allowed: ['admin'] },
+  { name: 'Accounts Payable', path: '/accounts-payable', allowed: ['admin'] },
+  { name: '⚙️ Settings', path: '/settings', allowed: ['admin'] }
+];
 
   const visibleLinks = NAV_LINKS.filter(link => link.allowed.includes(userRole))
 
