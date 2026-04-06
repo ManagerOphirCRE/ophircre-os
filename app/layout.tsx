@@ -50,8 +50,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const NAV_LINKS =[
   { name: 'Dashboard', path: '/', allowed: ['admin', 'assistant'] },
   { name: 'Properties', path: '/properties', allowed: ['admin', 'assistant'] },
+  { name: 'Rent Roll', path: '/rent-roll', allowed: ['admin', 'assistant'] },
+  { name: 'Compliance & COI', path: '/compliance', allowed: ['admin', 'assistant'] }, // <-- NEW LINK
   { name: 'Tenants & Leases', path: '/tenants', allowed: ['admin', 'assistant'] },
-  { name: 'Vendors', path: '/vendors', allowed: ['admin', 'assistant'] }, // <-- NEW LINK
+  { name: 'Vendors', path: '/vendors', allowed: ['admin', 'assistant'] },
   { name: 'Leasing Pipeline', path: '/leasing', allowed: ['admin', 'assistant'] },
   { name: 'Lease Drafter', path: '/lease-drafter', allowed: ['admin', 'assistant'] },
   { name: 'Communications', path: '/communications', allowed: ['admin', 'assistant'] },
