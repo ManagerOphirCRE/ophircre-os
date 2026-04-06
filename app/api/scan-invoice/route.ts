@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
-import pdf from 'pdf-parse';
 
 export async function POST(req: Request) {
   try {
+    // FIX: Moved inside the function so Vercel ignores it during the build
+    const pdf = require('pdf-parse'); 
+
     const formData = await req.formData();
     const file = formData.get('file') as File;
     if (!file) throw new Error("No file uploaded");
@@ -29,16 +31,13 @@ export async function POST(req: Request) {
     `;
 
     if (isImage) {
-      // If it's an image, convert it to Base64 so the AI can "see" it
       const base64Image = buffer.toString('base64');
       const dataUri = `data:${file.type};base64,${base64Image}`;
-      
       messagesContent =[
         { type: "text", text: promptText },
         { type: "image_url", image_url: { url: dataUri } }
       ];
     } else {
-      // If it's a PDF, extract the text normally
       const pdfData = await pdf(buffer);
       messagesContent =[
         { type: "text", text: promptText + `\n\nDOCUMENT TEXT:\n${pdfData.text}` }
@@ -53,7 +52,7 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        messages:[{ role: 'user', content: messagesContent }],
+        messages: [{ role: 'user', content: messagesContent }],
         temperature: 0.1,
         response_format: { type: "json_object" }
       })

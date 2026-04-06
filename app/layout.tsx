@@ -69,6 +69,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/tenants" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">Tenants & Leases</a>
               <a href="/lease-drafter" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">Lease Drafter</a>
               <a href="/cam-reconciliation" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">CAM Reconciliations</a>
+              <a href="/reports" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition font-bold text-white">📊 Reports & P&L</a>
               <a href="/ai-scanner" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">AI Lease Scanner</a>
               <a href="/ai-auditor" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">AI Auditor</a>
               <a href="/communications" className="block px-4 py-3 hover:bg-gray-800 rounded-lg text-gray-300 transition">Communications</a>

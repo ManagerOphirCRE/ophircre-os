@@ -113,11 +113,11 @@ export default function AIScannerPage() {
           <h3 className="font-bold text-gray-800 mb-2">1. Upload {activeTab === 'lease' ? 'Lease' : 'Statement'}</h3>
           <div className="flex-1 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center bg-gray-50 p-6">
             <input 
-              type="file" 
-              accept=".pdf,image/png,image/jpeg,image/jpg" 
-              onChange={(e) => activeTab === 'lease' ? setLeaseFile(e.target.files?.[0] || null) : setInvoiceFile(e.target.files?.[0] || null)} 
-              className="mb-4" 
-            />
+  type="file" 
+  accept={activeTab === 'lease' ? ".pdf" : ".pdf, image/*"} 
+  onChange={(e) => activeTab === 'lease' ? setLeaseFile(e.target.files?.[0] || null) : setInvoiceFile(e.target.files?.[0] || null)} 
+  className="mb-4 w-full" 
+/>
           </div>
           <button onClick={activeTab === 'lease' ? handleScanLease : handleScanInvoice} disabled={activeTab === 'lease' ? (isScanningLease || !leaseFile) : (isScanningInvoice || !invoiceFile)} className={`w-full mt-4 py-3 rounded-lg font-bold text-white transition shadow-sm ${activeTab === 'lease' ? (isScanningLease || !leaseFile) : (isScanningInvoice || !invoiceFile) ? 'bg-purple-400' : 'bg-purple-600 hover:bg-purple-700'}`}>
             {activeTab === 'lease' ? (isScanningLease ? 'Reading...' : 'Scan Lease') : (isScanningInvoice ? 'Reading...' : 'Scan Invoice')}

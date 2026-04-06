@@ -65,12 +65,6 @@ export default function TenantsPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr key={tenant.id} onClick={() => window.location.href = `/tenants/${tenant.id}`} className="hover:bg-blue-50 cursor-pointer transition">
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tenant Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Entity Type</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact Email</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-              </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {tenants && tenants.length > 0 ? tenants.map((tenant) => (
