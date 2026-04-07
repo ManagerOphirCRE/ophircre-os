@@ -75,7 +75,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={inter.className}>
         <div className="flex h-screen bg-gray-100 flex-col md:flex-row">
           
-          <div className="hidden md:flex w-64 bg-gray-900 text-white flex-col">
+          <div className="hidden md:flex w-64 bg-gray-900 text-white flex-col print:hidden">
             <div className="p-6">
               <h1 className="text-2xl font-bold">OphirCRE</h1>
               <p className="text-xs text-blue-400 mt-1 uppercase tracking-widest">{userRole} MODE</p>
@@ -92,7 +92,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
 
           <div className="flex-1 flex flex-col overflow-hidden mb-16 md:mb-0">
-            <div className="bg-white border-b border-gray-200 px-4 py-3 flex justify-between items-center">
+            <div className="bg-white border-b border-gray-200 px-4 py-3 flex justify-between items-center print:hidden">
               <form onSubmit={(e) => { e.preventDefault(); if(searchQuery) window.location.href=`/search?q=${searchQuery}` }} className="flex w-full max-w-md">
                 <input type="text" placeholder="Search..." className="w-full border rounded-l-lg p-2 text-sm outline-none" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                 <button type="submit" className="bg-blue-600 text-white px-4 rounded-r-lg text-sm">Search</button>

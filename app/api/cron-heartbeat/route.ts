@@ -1,40 +1,73 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// We have to use the SERVICE ROLE key here because this runs in the background without a logged-in user
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // We will add this to Vercel next!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 export async function GET(req: Request) {
   try {
-    // 1. Find Leases expiring in exactly 60 days
-    const sixtyDaysFromNow = new Date();
-    sixtyDaysFromNow.setDate(sixtyDaysFromNow.getDate() + 60);
-    const targetDate = sixtyDaysFromNow.toISOString().split('T')[0];
+    const today = new Date();
+    
+    // Calculate target dates
+    const in60Days = new Date(); in60Days.setDate(today.getDate() + 60);
+    const target60 = in60Days.toISOString().split('T')[0];
 
-    const { data: expiringLeases } = await supabase
-      .from('leases')
-      .select('*, tenants(name)')
-      .eq('end_date', targetDate);
+    const in30Days = new Date(); in30Days.setDate(today.getDate() + 30);
+    const target30 = in30Days.toISOString().split('T')[0];
 
-    // 2. Create Tasks for expiring leases
-    if (expiringLeases && expiringLeases.length > 0) {
-      const tasksToCreate = expiringLeases.map(lease => ({
-        title: `URGENT: Lease expiring for ${lease.tenants?.name}`,
-        description: `This lease expires on ${lease.end_date}. Please begin renewal negotiations.`,
-        status: 'To Do',
-        tenant_id: lease.tenant_id
+    let tasksCreated = 0;
+
+    // 1. Check for Leases expiring in exactly 60 days
+    const { data: leases } = await supabase.from('leases').select('*, tenants(name)').eq('end_date', target60);
+    if (leases && leases.length > 0) {
+      const tasks = leases.map(l => ({
+        title: `URGENT: Lease expiring for ${l.tenants?.name}`,
+        description: `Lease expires on ${l.end_date}. Begin renewal negotiations.`,
+        status: 'To Do', tenant_id: l.tenant_id
       }));
-
-      await supabase.from('tasks').insert(tasksToCreate);
+      await supabase.from('tasks').insert(tasks);
+      tasksCreated += tasks.length;
     }
 
-    // 3. (Future) Find Expiring COIs, Monthly Vendor Attestations, etc.
-    // You can add infinite date-checking logic here!
+    // 2. Check for Rent Escalations happening in exactly 30 days
+    const { data: escalations } = await supabase.from('leases').select('*, tenants(name)').eq('next_escalation_date', target30);
+    if (escalations && escalations.length > 0) {
+      const tasks = escalations.map(l => ({
+        title: `FINANCE: Rent Escalation for ${l.tenants?.name}`,
+        description: `Rent escalates by ${l.escalation_percentage}% on ${l.next_escalation_date}. Update the ledger and notify the tenant.`,
+        status: 'To Do', tenant_id: l.tenant_id
+      }));
+      await supabase.from('tasks').insert(tasks);
+      tasksCreated += tasks.length;
+    }
 
-    return NextResponse.json({ success: true, message: `Heartbeat ran successfully. Found ${expiringLeases?.length || 0} expiring leases.` });
+    // 3. Check for Tenant COIs expiring in exactly 30 days
+    const { data: tenantCois } = await supabase.from('tenants').select('id, name, coi_expiration').eq('coi_expiration', target30);
+    if (tenantCois && tenantCois.length > 0) {
+      const tasks = tenantCois.map(t => ({
+        title: `COMPLIANCE: COI Expiring for ${t.name}`,
+        description: `Tenant's Certificate of Insurance expires on ${t.coi_expiration}. Request updated COI.`,
+        status: 'To Do', tenant_id: t.id
+      }));
+      await supabase.from('tasks').insert(tasks);
+      tasksCreated += tasks.length;
+    }
+
+    // 4. Check for Vendor COIs expiring in exactly 30 days
+    const { data: vendorCois } = await supabase.from('vendors').select('id, company_name, coi_expiration').eq('coi_expiration', target30);
+    if (vendorCois && vendorCois.length > 0) {
+      const tasks = vendorCois.map(v => ({
+        title: `COMPLIANCE: Vendor COI Expiring (${v.company_name})`,
+        description: `Vendor's Certificate of Insurance expires on ${v.coi_expiration}. Do not dispatch until updated.`,
+        status: 'To Do'
+      }));
+      await supabase.from('tasks').insert(tasks);
+      tasksCreated += tasks.length;
+    }
+
+    return NextResponse.json({ success: true, message: `Heartbeat ran successfully. Created ${tasksCreated} automated tasks.` });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
