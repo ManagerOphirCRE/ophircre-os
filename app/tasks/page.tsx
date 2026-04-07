@@ -1,40 +1,62 @@
-"use client"
-import { useState, useEffect } from 'react'
-import { supabase } from '@/app/utils/supabase'
+"use client";
+import { useState, useEffect } from 'react';
+import { supabase } from '@/app/utils/supabase';
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<any[]>([])
-  const[newTaskTitle, setNewTaskTitle] = useState('')
-  const [selectedTask, setSelectedTask] = useState<any>(null)
+  const [tasks, setTasks] = useState<any[]>([]);
+  const[vendors, setVendors] = useState<any[]>([]);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [selectedVendorId, setSelectedVendorId] = useState('');
 
-  useEffect(() => { fetchTasks() },[])
-
-  async function fetchTasks() {
-    const { data } = await supabase.from('tasks').select('*, tenants(name), properties(name)').order('created_at', { ascending: false })
-    if (data) setTasks(data)
-  }
+  useEffect(function loadData() {
+    async function fetchData() {
+      const { data: tData } = await supabase.from('tasks').select('*, tenants(name), properties(name)').order('created_at', { ascending: false });
+      if (tData) setTasks(tData);
+      
+      const { data: vData } = await supabase.from('vendors').select('*').order('company_name');
+      if (vData) setVendors(vData);
+    }
+    fetchData();
+  },[]);
 
   async function addTask() {
-    if (!newTaskTitle) return
-    await supabase.from('tasks').insert([{ title: newTaskTitle, status: 'To Do' }])
-    setNewTaskTitle(''); fetchTasks()
+    if (!newTaskTitle) return;
+    await supabase.from('tasks').insert([{ title: newTaskTitle, status: 'To Do' }]);
+    setNewTaskTitle(''); 
+    const { data } = await supabase.from('tasks').select('*, tenants(name), properties(name)').order('created_at', { ascending: false });
+    if (data) setTasks(data);
   }
 
   async function moveTask(id: string, newStatus: string) {
-    await supabase.from('tasks').update({ status: newStatus }).eq('id', id)
-    fetchTasks(); setSelectedTask(null)
+    await supabase.from('tasks').update({ status: newStatus }).eq('id', id);
+    const { data } = await supabase.from('tasks').select('*, tenants(name), properties(name)').order('created_at', { ascending: false });
+    if (data) setTasks(data);
+    setSelectedTask(null);
   }
 
   async function deleteTask(id: string) {
-    if(!confirm("Are you sure you want to delete this task?")) return
-    await supabase.from('tasks').delete().eq('id', id)
-    fetchTasks(); setSelectedTask(null)
+    if(!confirm("Delete this task?")) return;
+    await supabase.from('tasks').delete().eq('id', id);
+    const { data } = await supabase.from('tasks').select('*, tenants(name), properties(name)').order('created_at', { ascending: false });
+    if (data) setTasks(data);
+    setSelectedTask(null);
   }
 
-  // Group tasks by status (Treating 'New' from the portals as 'To Do')
-  const todoTasks = tasks.filter(t => t.status === 'To Do' || t.status === 'New')
-  const inProgressTasks = tasks.filter(t => t.status === 'In Progress')
-  const doneTasks = tasks.filter(t => t.status === 'Done')
+  async function dispatchToVendor() {
+    if (!selectedVendorId) return alert("Select a vendor first.");
+    const vendor = vendors.find(v => v.id === selectedVendorId);
+    
+    // In Phase 6, this triggers SendGrid to email the vendor a Magic Link to the work order.
+    alert(`Work Order Dispatched! An email has been sent to ${vendor.company_name} with instructions to upload their invoice to the Vendor Portal.`);
+    
+    // Update the task status
+    await moveTask(selectedTask.id, 'In Progress');
+  }
+
+  const todoTasks = tasks.filter(t => t.status === 'To Do' || t.status === 'New');
+  const inProgressTasks = tasks.filter(t => t.status === 'In Progress');
+  const doneTasks = tasks.filter(t => t.status === 'Done');
 
   return (
     <>
@@ -49,7 +71,6 @@ export default function TasksPage() {
       <main className="flex-1 overflow-y-auto p-8 relative">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
           
-          {/* TO DO COLUMN */}
           <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
             <h3 className="font-bold text-gray-700 mb-4">To Do ({todoTasks.length})</h3>
             <div className="space-y-3">
@@ -62,7 +83,6 @@ export default function TasksPage() {
             </div>
           </div>
 
-          {/* IN PROGRESS COLUMN */}
           <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
             <h3 className="font-bold text-blue-800 mb-4">In Progress ({inProgressTasks.length})</h3>
             <div className="space-y-3">
@@ -75,7 +95,6 @@ export default function TasksPage() {
             </div>
           </div>
 
-          {/* DONE COLUMN */}
           <div className="bg-green-50 rounded-xl p-4 border border-green-100">
             <h3 className="font-bold text-green-800 mb-4">Done ({doneTasks.length})</h3>
             <div className="space-y-3">
@@ -107,6 +126,19 @@ export default function TasksPage() {
                     {selectedTask.description || 'No description provided.'}
                   </p>
                 </div>
+
+                {/* NEW: VENDOR DISPATCH */}
+                <div className="bg-orange-50 p-4 rounded-lg border border-orange-200 mt-4">
+                  <strong className="text-orange-800 block mb-2">Dispatch to Vendor</strong>
+                  <div className="flex space-x-2">
+                    <select className="flex-1 border p-2 rounded outline-none" value={selectedVendorId} onChange={(e) => setSelectedVendorId(e.target.value)}>
+                      <option value="">-- Select Vendor --</option>
+                      {vendors.map(v => <option key={v.id} value={v.id}>{v.company_name} ({v.trade})</option>)}
+                    </select>
+                    <button onClick={dispatchToVendor} className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded font-bold transition">Dispatch</button>
+                  </div>
+                </div>
+
               </div>
 
               <div className="flex justify-between border-t pt-4 items-center">
@@ -122,5 +154,5 @@ export default function TasksPage() {
         )}
       </main>
     </>
-  )
+  );
 }

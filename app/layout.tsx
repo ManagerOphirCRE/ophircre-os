@@ -12,6 +12,7 @@ const NAV_LINKS =[
   { name: 'Inbox & Workspace', path: '/workspace', allowed: ['admin', 'assistant'] },
   { name: 'Properties', path: '/properties', allowed: ['admin', 'assistant'] },
   { name: 'Deal Analyzer', path: '/deal-analyzer', allowed: ['admin'] },
+  { name: 'Credential Vault', path: '/vault', allowed: ['admin'] },
   { name: 'Rent Roll', path: '/rent-roll', allowed: ['admin', 'assistant'] },
   { name: 'Compliance & COI', path: '/compliance', allowed: ['admin', 'assistant'] },
   { name: 'Tenants & Leases', path: '/tenants', allowed: ['admin', 'assistant'] },
