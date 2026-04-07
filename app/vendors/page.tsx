@@ -4,7 +4,7 @@ import { supabase } from '@/app/utils/supabase'
 
 export default function VendorsPage() {
   const[vendors, setVendors] = useState<any[]>([])
-  const [isModalOpen, setIsModalOpen] = useState(false)
+  const[isModalOpen, setIsModalOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
   // Form State

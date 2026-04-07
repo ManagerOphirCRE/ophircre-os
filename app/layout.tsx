@@ -17,6 +17,7 @@ const NAV_LINKS =[
   { name: 'Compliance & COI', path: '/compliance', allowed: ['admin', 'assistant'] },
   { name: 'Tenants & Leases', path: '/tenants', allowed: ['admin', 'assistant'] },
   { name: 'Tenant Billing', path: '/billing', allowed: ['admin', 'assistant'] },
+  { name: 'Vendors', path: '/vendors', allowed:['admin', 'assistant'] },
   { name: 'Vendors', path: '/vendors', allowed: ['admin', 'assistant'] },
   { name: 'Staff Timesheets', path: '/timesheets', allowed: ['admin', 'assistant'] },
   { name: 'Leasing Pipeline', path: '/leasing', allowed: ['admin', 'assistant'] },

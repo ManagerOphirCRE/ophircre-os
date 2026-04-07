@@ -5,7 +5,7 @@ import { supabase } from '@/app/utils/supabase'
 export default function PortalLoginPage() {
   const[email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isSent, setIsSent] = useState(false)
+  const[isSent, setIsSent] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
   async function handleMagicLinkLogin(e: any) {
