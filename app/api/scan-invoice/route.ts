@@ -20,7 +20,8 @@ export async function POST(req: Request) {
       Return ONLY a valid JSON object with these exact keys. If a value is not found, leave it as an empty string (or 0 for numbers).
       {
         "payee_name": "Name of the vendor, lender, or billing company",
-        "date": "YYYY-MM-DD",
+        "invoice_number": "The invoice or statement number (if any)",
+        "date": "YYYY-MM-DD (The statement date or invoice date)",
         "total_amount": numeric value only,
         "is_mortgage": boolean (true ONLY if this is a mortgage/loan statement),
         "principal_amount": numeric value (if mortgage),

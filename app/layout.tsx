@@ -31,6 +31,7 @@ const NAV_LINKS =[
   { name: '📊 Reports & P&L', path: '/reports', allowed: ['admin', 'accountant'] },
   { name: 'Financials', path: '/financials', allowed: ['admin', 'accountant'] },
   { name: 'Accounts Payable', path: '/accounts-payable', allowed: ['admin', 'accountant'] },
+  { name: 'Vendor Ledger (1099)', path: '/vendor-ledger', allowed: ['admin', 'accountant'] },
   { name: '⚙️ Settings', path: '/settings', allowed: ['admin'] }
 ];
 
