@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid';
+import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } from 'plaid';
 
 const configuration = new Configuration({
-  basePath: PlaidEnvironments.sandbox, // We use 'sandbox' for testing. Change to 'production' later!
+  basePath: PlaidEnvironments.sandbox, // Change to 'production' later!
   baseOptions: {
     headers: {
       'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
@@ -17,8 +17,9 @@ export async function POST() {
     const response = await client.linkTokenCreate({
       user: { client_user_id: 'ophircre-admin' },
       client_name: 'OphirCRE OS',
-      products: ['transactions'],
-      country_codes: ['US'],
+      // FIX: Using Plaid's official TypeScript Enums instead of plain text strings
+      products: [Products.Transactions],
+      country_codes: [CountryCode.Us],
       language: 'en',
     });
     return NextResponse.json(response.data);
