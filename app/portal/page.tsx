@@ -4,33 +4,22 @@ import { supabase } from '@/app/utils/supabase';
 
 export default function TenantPortal() {
   const [tenant, setTenant] = useState<any>(null);
-  const[invoices, setInvoices] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isPaying, setIsPaying] = useState(false);
+  const [isRenewing, setIsRenewing] = useState(false);
   
-  // Prospect Upload State
-  const[uploadingDoc, setUploadingDoc] = useState(false);
-
-  // Standard Portal State
   const [ticketTitle, setTicketTitle] = useState('');
   const [ticketDesc, setTicketDesc] = useState('');
   const [ticketFile, setTicketFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
   const [rating, setRating] = useState(5);
   const [feedback, setFeedback] = useState('');
   const [surveySent, setSurveySent] = useState(false);
-  const [signature, setSignature] = useState('');
-  const [redlineNotes, setRedlineNotes] = useState('');
-  const[isSigning, setIsSigning] = useState(false);
 
   useEffect(function loadSecureTenant() {
     async function fetchData() {
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('success') === 'true') {
-        alert(`Payment of $${urlParams.get('amount')} received successfully!`);
-        window.history.replaceState(null, '', '/portal');
-      }
-
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.email) {
         const { data: tData } = await supabase.from('tenants').select('*, leases(*, spaces(name, properties(name)))').ilike('contact_email', session.user.email).single();
@@ -45,55 +34,36 @@ export default function TenantPortal() {
     fetchData();
   },[]);
 
-  // --- PROSPECT UPLOAD LOGIC ---
-  async function uploadProspectDoc(event: any, docType: string) {
+  // NEW: 1-Click Lease Renewal
+  async function acceptRenewal(lease: any) {
+    if (!confirm(`Do you legally agree to extend your lease for 12 months at the new rate of $${lease.renewal_offer_rent}/mo?`)) return;
+    setIsRenewing(true);
     try {
-      setUploadingDoc(true);
-      const file = event.target.files[0];
-      if (!file) return;
+      // Calculate the new end date (+1 year)
+      const currentEndDate = new Date(lease.end_date);
+      currentEndDate.setFullYear(currentEndDate.getFullYear() + 1);
+      const newEndDate = currentEndDate.toISOString().split('T')[0];
 
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${tenant.name.replace(/\s+/g, '_')}_${docType}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+      // Update the lease in the database
+      await supabase.from('leases').update({
+        end_date: newEndDate,
+        base_rent_amount: lease.renewal_offer_rent,
+        renewal_status: 'Accepted'
+      }).eq('id', lease.id);
 
-      const { error } = await supabase.storage.from('documents').upload(fileName, file);
-      if (error) throw error;
-      
-      // Create a task to notify management
+      // Notify Management
       await supabase.from('tasks').insert([{
-        title: `DOCUMENT UPLOADED: ${tenant.name}`,
-        description: `Prospect uploaded their ${docType}. You can view it in the Global Filing Cabinet.`,
+        title: `RENEWAL ACCEPTED: ${tenant.name}`,
+        description: `Tenant accepted the renewal offer. Lease extended to ${newEndDate} at $${lease.renewal_offer_rent}/mo.`,
         tenant_id: tenant.id,
         status: 'To Do'
       }]);
 
-      alert(`${docType} uploaded successfully! Management has been notified.`);
-    } catch (error: any) {
-      alert('Error uploading: ' + error.message);
-    } finally {
-      setUploadingDoc(false);
-    }
+      alert("Lease successfully renewed! Thank you for staying with us.");
+      window.location.reload();
+    } catch (error: any) { alert("Error: " + error.message); } finally { setIsRenewing(false); }
   }
 
-  // --- LEASE SIGNING LOGIC ---
-  async function signLease() {
-    if (!signature || signature.toLowerCase() !== tenant.name.toLowerCase()) return alert(`Please type your exact legal name to sign: ${tenant.name}`);
-    setIsSigning(true);
-    try {
-      await supabase.from('leases').update({ tenant_signature: signature, signed_at: new Date().toISOString(), status: 'Active' }).eq('id', tenant.leases[0].id);
-      alert("Lease successfully executed!"); window.location.reload();
-    } catch (error: any) { alert("Error: " + error.message); } finally { setIsSigning(false); }
-  }
-
-  async function requestChanges() {
-    if (!redlineNotes) return alert("Please explain the changes you are requesting.");
-    setIsSigning(true);
-    try {
-      await supabase.from('tasks').insert([{ title: `REDLINE REQUEST: ${tenant.name}`, description: `Tenant requested changes to their pending lease:\n\n${redlineNotes}`, tenant_id: tenant.id, status: 'To Do' }]);
-      alert("Your requested changes have been sent to management for review."); setRedlineNotes('');
-    } catch (error: any) { alert("Error: " + error.message); } finally { setIsSigning(false); }
-  }
-
-  // --- STANDARD PORTAL LOGIC ---
   async function handlePayment(amountDue: number) {
     if (amountDue <= 0) return alert("Your balance is zero!");
     setIsPaying(true);
@@ -128,97 +98,29 @@ export default function TenantPortal() {
   }
 
   if (isLoading) return <div className="p-8 text-center text-gray-500">Authenticating secure connection...</div>;
-  if (!tenant) return <div className="p-12 text-center bg-white rounded-xl shadow-sm border border-red-200 max-w-2xl mx-auto mt-10"><h2 className="text-2xl font-bold text-red-600 mb-2">Account Not Linked</h2><p className="text-gray-600">Your email address is not currently linked to an active profile.</p></div>;
+  if (!tenant) return <div className="p-12 text-center bg-white rounded-xl shadow-sm border border-red-200 max-w-2xl mx-auto mt-10"><h2 className="text-2xl font-bold text-red-600 mb-2">Account Not Linked</h2><p className="text-gray-600">Your email address is not currently linked to an active tenant profile.</p></div>;
 
   const activeLease = tenant.leases?.[0];
-
-  // --- PROSPECT UNDERWRITING SCREEN ---
-  if (tenant.status.startsWith('prospect') && tenant.status !== 'prospect_negotiation') {
-    return (
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="bg-slate-900 rounded-2xl p-8 text-white shadow-md text-center">
-          <h2 className="text-3xl font-bold mb-2">Application Under Review</h2>
-          <p className="text-slate-300">Welcome, {tenant.name}. Please upload the required documents below to complete your underwriting process.</p>
-        </div>
-        
-        <div className="bg-white p-8 rounded-xl shadow-lg border border-gray-200">
-          <h3 className="font-bold text-gray-800 mb-4 border-b pb-2">Required Documents</h3>
-          <div className="space-y-6">
-            
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <div>
-                <h4 className="font-bold text-gray-900">Government Issued ID</h4>
-                <p className="text-xs text-gray-500">Driver's License or Passport</p>
-              </div>
-              <label className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold cursor-pointer transition">
-                {uploadingDoc ? 'Uploading...' : 'Upload PDF/Image'}
-                <input type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => uploadProspectDoc(e, 'ID')} disabled={uploadingDoc} />
-              </label>
-            </div>
-
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <div>
-                <h4 className="font-bold text-gray-900">Business Bank Statements</h4>
-                <p className="text-xs text-gray-500">Last 3 months required</p>
-              </div>
-              <label className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold cursor-pointer transition">
-                {uploadingDoc ? 'Uploading...' : 'Upload PDF'}
-                <input type="file" className="hidden" accept=".pdf" onChange={(e) => uploadProspectDoc(e, 'Bank_Statements')} disabled={uploadingDoc} />
-              </label>
-            </div>
-
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <div>
-                <h4 className="font-bold text-gray-900">Tax Returns</h4>
-                <p className="text-xs text-gray-500">Previous 2 years (Business or Personal)</p>
-              </div>
-              <label className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold cursor-pointer transition">
-                {uploadingDoc ? 'Uploading...' : 'Upload PDF'}
-                <input type="file" className="hidden" accept=".pdf" onChange={(e) => uploadProspectDoc(e, 'Tax_Returns')} disabled={uploadingDoc} />
-              </label>
-            </div>
-
-          </div>
-          <p className="text-xs text-gray-400 text-center mt-6">Your documents are securely encrypted and transmitted directly to property management.</p>
-        </div>
-      </div>
-    );
-  }
-
-  // --- E-SIGNATURE SCREEN ---
-  if (activeLease?.status === 'Pending Signature') {
-    return (
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="bg-blue-600 rounded-2xl p-8 text-white shadow-md text-center">
-          <h2 className="text-3xl font-bold mb-2">Action Required: Sign Your Lease</h2>
-          <p className="text-blue-100">Please review the document below and provide your digital signature to activate your portal.</p>
-        </div>
-        <div className="bg-white p-8 rounded-xl shadow-lg border border-gray-200">
-          <div className="border border-gray-300 p-6 h-[500px] overflow-y-auto mb-6 bg-gray-50 rounded font-serif text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: activeLease.document_html }} />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-6 border-t border-gray-200">
-            <div>
-              <h3 className="font-bold text-gray-800 mb-2">Execute Document</h3>
-              <label className="block text-xs text-gray-500 mb-1">Type your full legal name to sign: <strong>{tenant.name}</strong></label>
-              <input type="text" className="w-full border-2 border-blue-200 p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 mb-3" placeholder="Digital Signature..." value={signature} onChange={(e) => setSignature(e.target.value)} />
-              <button onClick={signLease} disabled={isSigning} className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold transition shadow-sm">{isSigning ? 'Processing...' : 'Sign & Execute Lease'}</button>
-            </div>
-            <div className="border-l pl-8">
-              <h3 className="font-bold text-gray-800 mb-2">Request Changes</h3>
-              <label className="block text-xs text-gray-500 mb-1">Need to negotiate a term? (Redline)</label>
-              <textarea className="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 h-20 resize-none mb-3" placeholder="e.g., Please change the start date..." value={redlineNotes} onChange={(e) => setRedlineNotes(e.target.value)} />
-              <button onClick={requestChanges} disabled={isSigning} className="w-full bg-gray-800 hover:bg-black text-white py-2 rounded-lg font-bold transition shadow-sm">Submit Requested Changes</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // --- STANDARD PORTAL SCREEN ---
   const unpaidBalance = invoices.filter(i => i.status !== 'Paid').reduce((sum, i) => sum + Number(i.amount), 0);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 max-w-6xl mx-auto">
+      
+      {/* NEW: RENEWAL BANNER */}
+      {activeLease?.renewal_status === 'Offered' && (
+        <div className="bg-orange-500 rounded-2xl p-8 text-white shadow-lg flex flex-col md:flex-row justify-between items-center border-4 border-orange-400">
+          <div>
+            <h2 className="text-2xl font-black mb-1">⚠️ Your Lease is Expiring Soon</h2>
+            <p className="text-orange-100 font-medium">We would love for you to stay! Renew your lease for another 12 months at the new rate of <strong>${activeLease.renewal_offer_rent}/mo</strong>.</p>
+          </div>
+          <div className="mt-4 md:mt-0 flex space-x-3">
+            <button onClick={() => acceptRenewal(activeLease)} disabled={isRenewing} className="bg-white text-orange-600 px-6 py-3 rounded-lg font-black shadow-md hover:bg-gray-100 transition">
+              {isRenewing ? 'Processing...' : 'Accept & Renew Now'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-blue-600 rounded-2xl p-8 text-white shadow-md">
         <h2 className="text-3xl font-bold mb-2">Welcome back, {tenant.name}</h2>
         <p className="text-blue-100">Manage your lease, pay rent, and request maintenance here.</p>
