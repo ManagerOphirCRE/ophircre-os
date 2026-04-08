@@ -20,6 +20,8 @@ const NAV_LINKS =[
   { name: 'Lease Drafter', path: '/lease-drafter', allowed: ['admin', 'manager'] },
   { name: 'Communications', path: '/communications', allowed: ['admin', 'manager', 'assistant'] },
   { name: 'Task Board', path: '/tasks', allowed: ['admin', 'manager', 'maintenance', 'assistant'] },
+  { name: 'Inspections', path: '/inspections', allowed: ['admin', 'manager', 'maintenance', 'assistant'] },
+  { name: 'Inventory', path: '/inventory', allowed: ['admin', 'manager', 'maintenance', 'assistant'] },
   { name: 'Filing Cabinet', path: '/documents', allowed:['admin', 'manager', 'accountant', 'assistant'] },
   { name: 'Deal Analyzer', path: '/deal-analyzer', allowed: ['admin'] },
   { name: 'Credential Vault', path: '/vault', allowed:['admin'] },
