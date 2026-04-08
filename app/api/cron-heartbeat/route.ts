@@ -66,9 +66,37 @@ export async function GET(req: Request) {
       await supabase.from('tasks').insert(tasks);
       tasksCreated += tasks.length;
     }
+// 5. Check for Overdue Rent & Apply Late Fees
+    const todayStr = today.toISOString().split('T')[0];
+    
+    // Find invoices that are Unpaid and past their due date
+    const { data: overdueInvoices } = await supabase
+      .from('tenant_invoices')
+      .select('*')
+      .eq('status', 'Unpaid')
+      .lt('due_date', todayStr);
 
+    if (overdueInvoices && overdueInvoices.length > 0) {
+      // Mark them as Overdue
+      const overdueIds = overdueInvoices.map(i => i.id);
+      await supabase.from('tenant_invoices').update({ status: 'Overdue' }).in('id', overdueIds);
+
+      // Generate a 5% Late Fee invoice for each
+      const lateFeeInvoices = overdueInvoices.map(inv => ({
+        tenant_id: inv.tenant_id,
+        lease_id: inv.lease_id,
+        amount: Number(inv.amount) * 0.05, // 5% Late Fee
+        description: `Late Fee (5%) for ${inv.description}`,
+        due_date: todayStr,
+        status: 'Unpaid'
+      }));
+
+      await supabase.from('tenant_invoices').insert(lateFeeInvoices);
+      tasksCreated += lateFeeInvoices.length;
+    }
     return NextResponse.json({ success: true, message: `Heartbeat ran successfully. Created ${tasksCreated} automated tasks.` });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  
 }

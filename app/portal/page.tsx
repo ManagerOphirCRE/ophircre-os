@@ -6,24 +6,31 @@ export default function TenantPortal() {
   const [tenant, setTenant] = useState<any>(null);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPaying, setIsPaying] = useState(false);
   
   const[ticketTitle, setTicketTitle] = useState('');
   const [ticketDesc, setTicketDesc] = useState('');
-  const [ticketFile, setTicketFile] = useState<File | null>(null);
+  const[ticketFile, setTicketFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [rating, setRating] = useState(5);
-  const [feedback, setFeedback] = useState('');
+  const[feedback, setFeedback] = useState('');
   const [surveySent, setSurveySent] = useState(false);
 
   useEffect(function loadSecureTenant() {
     async function fetchData() {
+      // Check if they just returned from a successful Stripe payment
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('success') === 'true') {
+        alert(`Payment of $${urlParams.get('amount')} received successfully! Thank you.`);
+        window.history.replaceState(null, '', '/portal'); // Clean the URL
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.email) {
         const { data: tData } = await supabase.from('tenants').select('*, leases(*, spaces(name, properties(name)))').ilike('contact_email', session.user.email).single();
         if (tData) {
           setTenant(tData);
-          // Fetch their invoices
           const { data: iData } = await supabase.from('tenant_invoices').select('*').eq('tenant_id', tData.id).order('due_date', { ascending: false });
           if (iData) setInvoices(iData);
         }
@@ -32,6 +39,27 @@ export default function TenantPortal() {
     }
     fetchData();
   },[]);
+
+  // NEW: Trigger Stripe Checkout
+  async function handlePayment(amountDue: number) {
+    if (amountDue <= 0) return alert("Your balance is zero!");
+    setIsPaying(true);
+    try {
+      const res = await fetch('/api/stripe-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: amountDue, tenantName: tenant.name, tenantId: tenant.id })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
+      // Redirect the tenant to the secure Stripe checkout page
+      window.location.href = data.url;
+    } catch (error: any) {
+      alert("Payment Error: " + error.message + "\n(Note: Add STRIPE_SECRET_KEY to Vercel to activate real payments).");
+      setIsPaying(false);
+    }
+  }
 
   async function submitTicket(e: any) {
     e.preventDefault();
@@ -77,9 +105,16 @@ export default function TenantPortal() {
             <p className={`text-4xl font-bold mb-4 ${unpaidBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>
               ${unpaidBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}
             </p>
-            <button onClick={() => alert("In Phase 6, this will open the Stripe Credit Card / ACH checkout portal!")} className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold transition">
-              Make a Payment
+            <button 
+              onClick={() => handlePayment(unpaidBalance)} 
+              disabled={isPaying || unpaidBalance <= 0}
+              className={`w-full py-3 rounded-lg font-bold text-white transition ${isPaying || unpaidBalance <= 0 ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700 shadow-sm'}`}
+            >
+              {isPaying ? 'Connecting to Bank...' : unpaidBalance > 0 ? 'Pay Balance Now' : 'Balance Paid'}
             </button>
+            <div className="flex justify-center items-center mt-3 space-x-2 opacity-50">
+              <span className="text-xs font-bold">💳 STRIPE SECURE</span>
+            </div>
           </div>
 
           {activeLease && (
@@ -112,8 +147,6 @@ export default function TenantPortal() {
         </div>
 
         <div className="md:col-span-2 space-y-8">
-          
-          {/* NEW: INVOICE HISTORY */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="p-6 bg-gray-50 border-b border-gray-200"><h3 className="font-bold text-gray-800">Billing History</h3></div>
             <table className="min-w-full divide-y divide-gray-200">
@@ -132,7 +165,7 @@ export default function TenantPortal() {
                     <td className="px-6 py-4 text-sm text-gray-500">{inv.due_date}</td>
                     <td className="px-6 py-4 text-sm font-bold text-gray-900">${Number(inv.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                     <td className="px-6 py-4 text-sm">
-                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${inv.status === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{inv.status}</span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${inv.status === 'Paid' ? 'bg-green-100 text-green-800' : inv.status === 'Overdue' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{inv.status}</span>
                     </td>
                   </tr>
                 ))}
