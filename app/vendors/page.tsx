@@ -56,7 +56,7 @@ export default function VendorsPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
-              <tr>
+              <tr key={v.id} onClick={() => window.location.href = `/vendors/${v.id}`} className="hover:bg-blue-50 cursor-pointer transition">
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trade / Specialty</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Portal Email</th>
