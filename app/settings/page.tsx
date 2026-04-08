@@ -134,8 +134,11 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Security Role</label>
                   <select className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={newRole} onChange={(e) => setNewRole(e.target.value)}>
-                    <option value="assistant">Assistant (Limited Access)</option>
                     <option value="admin">Admin (Full Access)</option>
+                    <option value="manager">Property Manager (Ops & Leasing)</option>
+                    <option value="accountant">Accountant (Financials & Reports)</option>
+                    <option value="assistant">Assistant (General Ops)</option>
+                    <option value="maintenance">Maintenance (Tasks Only)</option>
                   </select>
                 </div>
                 <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md font-bold transition">Grant Access</button>
