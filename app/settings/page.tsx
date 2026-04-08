@@ -36,8 +36,22 @@ export default function SettingsPage() {
     e.preventDefault();
     if (!newEmail) return;
     try {
-      await supabase.from('user_roles').insert([{ email: newEmail.toLowerCase(), role: newRole }]);
-      alert("Team member added! Tell them to log in via the Magic Link portal.");
+      // 1. Add to database
+      const { error } = await supabase.from('user_roles').insert([{ email: newEmail.toLowerCase(), role: newRole }]);
+      if (error) throw error;
+
+      // 2. Send the Welcome Email!
+      await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: newEmail.toLowerCase(),
+          subject: "Welcome to OphirCRE Operating System",
+          text: `Hello,\n\nYou have been granted ${newRole.toUpperCase()} access to the OphirCRE Operating System.\n\nPlease log in securely using your email address here:\nhttps://app.ophircre.com/portal-login\n\nWelcome aboard!`
+        })
+      });
+
+      alert("Team member added and Welcome Email sent!");
       setNewEmail('');
       const { data } = await supabase.from('user_roles').select('*').order('role', { ascending: true });
       if (data) setTeam(data);

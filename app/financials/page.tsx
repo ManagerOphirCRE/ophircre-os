@@ -143,10 +143,20 @@ export default function FinancialsPage() {
       <header className="bg-white border-b border-gray-200 px-8 py-4 flex justify-between items-center">
         <h2 className="text-xl font-semibold text-gray-800">General Ledger</h2>
         <div className="space-x-3 flex items-center">
+          
+          {/* NEW: Plaid Connect Button */}
+          <button 
+            onClick={() => alert("In Phase 6, this will open the Plaid Bank Login window! (Requires Plaid API Keys in Vercel)")} 
+            className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-md font-medium transition shadow-sm flex items-center"
+          >
+            <span className="mr-2">🏦</span> Connect Bank
+          </button>
+
           <label className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-md font-medium transition shadow-sm cursor-pointer">
             {isProcessingCsv ? 'Processing...' : 'Bulk Import CSVs'}
             <input type="file" accept=".csv" multiple className="hidden" onChange={handleBulkFileUpload} disabled={isProcessingCsv} />
           </label>
+          
           <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition shadow-sm">
             + New Transaction
           </button>
