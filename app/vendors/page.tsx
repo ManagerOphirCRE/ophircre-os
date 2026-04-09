@@ -3,12 +3,12 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/app/utils/supabase'
 
 export default function VendorsPage() {
-  const[vendors, setVendors] = useState<any[]>([])
-  const[isModalOpen, setIsModalOpen] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
+  const [vendors, setVendors] = useState<any[]>([])
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const[isSaving, setIsSaving] = useState(false)
 
   // Form State
-  const[companyName, setCompanyName] = useState('')
+  const [companyName, setCompanyName] = useState('')
   const [trade, setTrade] = useState('')
   const [email, setEmail] = useState('')
 
@@ -56,7 +56,7 @@ export default function VendorsPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
-              <tr key={v.id} onClick={() => window.location.href = `/vendors/${v.id}`} className="hover:bg-blue-50 cursor-pointer transition">
+              <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trade / Specialty</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Portal Email</th>
@@ -64,7 +64,7 @@ export default function VendorsPage() {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {vendors.map((v) => (
-                <tr key={v.id} className="hover:bg-gray-50">
+                <tr key={v.id} onClick={() => window.location.href = `/vendors/${v.id}`} className="hover:bg-blue-50 cursor-pointer transition">
                   <td className="px-6 py-4 whitespace-nowrap font-bold text-gray-900">{v.company_name}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{v.trade || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{v.contact_email || 'No email (Portal Access Disabled)'}</td>
