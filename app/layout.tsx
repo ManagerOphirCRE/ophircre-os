@@ -37,6 +37,8 @@ const NAV_LINKS =[
   { name: 'AI Auditor', path: '/ai-auditor', allowed: ['admin', 'accountant'] },
   { name: 'CAM Reconciliations', path: '/cam-reconciliation', allowed: ['admin', 'accountant'] },
   { name: '📊 Reports & P&L', path: '/reports', allowed:['admin', 'accountant'] },
+  { name: '📊 Reports & P&L', path: '/reports', allowed: ['admin', 'accountant'] },
+  { name: 'CPA Tax Center', path: '/tax-center', allowed: ['admin', 'accountant'] },
   { name: 'Financials', path: '/financials', allowed:['admin', 'accountant'] },
   { name: 'Financials', path: '/financials', allowed: ['admin', 'accountant'] },
   { name: 'Bank Reconciliation', path: '/reconciliation', allowed: ['admin', 'accountant'] },
