@@ -8,27 +8,29 @@ export default function TenantProfilePage() {
   const tenantId = params.id
 
   const [tenant, setTenant] = useState<any>(null)
-  const[lease, setLease] = useState<any>(null)
+  const [lease, setLease] = useState<any>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('lease')
   const [invoices, setInvoices] = useState<any[]>([])
   const [comms, setComps] = useState<any[]>([])
-  const[tasks, setTasks] = useState<any[]>([])
+  const [tasks, setTasks] = useState<any[]>([])
 
-  // Tenant State
   const[coiDate, setCoiDate] = useState('')
-
-  // Lease Financials State
   const [baseRent, setBaseRent] = useState(0)
   const [camCharge, setCamCharge] = useState(0)
   const [taxCharge, setTaxCharge] = useState(0)
   const [insCharge, setInsCharge] = useState(0)
   
-  // NEW: Advanced Escalation State
   const [escalationDate, setEscalationDate] = useState('')
   const[escalationType, setEscalationType] = useState('percentage')
   const[escalationPct, setEscalationPct] = useState(0)
   const [escalationFixed, setEscalationFixed] = useState(0)
+
+  // NEW: Escalation Preview Modal State
+  const [isEscalationModalOpen, setIsEscalationModalOpen] = useState(false)
+  const [suggestedNewRent, setSuggestedNewRent] = useState('')
+  const[escalationEmailBody, setEscalationEmailBody] = useState('')
+  const[isExecuting, setIsExecuting] = useState(false)
 
   useEffect(() => {
     async function fetchTenantData() {
@@ -62,14 +64,70 @@ export default function TenantProfilePage() {
       if (lease) {
         await supabase.from('leases').update({
           base_rent_amount: baseRent, cam_charge: camCharge, tax_charge: taxCharge, insurance_charge: insCharge,
-          next_escalation_date: escalationDate || null, 
-          escalation_type: escalationType,
+          next_escalation_date: escalationDate || null, escalation_type: escalationType,
           escalation_percentage: escalationType === 'percentage' ? escalationPct : 0,
           escalation_fixed_amount: escalationType === 'fixed' ? escalationFixed : 0
         }).eq('id', lease.id)
       }
-      alert("Profile and Financials Updated! The Auto-Biller will use these new rules.")
+      alert("Profile and Financials Updated!")
     } catch (error: any) { alert("Error: " + error.message) } finally { setIsSaving(false) }
+  }
+
+  // NEW: Opens the modal, calculates the math, and drafts the email
+  function openEscalationModal() {
+    const currentRent = Number(baseRent);
+    let newRent = currentRent;
+
+    if (escalationType === 'percentage') {
+      newRent = currentRent + (currentRent * (Number(escalationPct) / 100));
+    } else if (escalationType === 'fixed') {
+      newRent = Number(escalationFixed);
+    }
+
+    setSuggestedNewRent(newRent.toFixed(2));
+
+    const draftEmail = `Hello ${tenant?.name},\n\nThis is an official notice regarding your lease at ${lease?.spaces?.properties?.name}.\n\nPer the terms of your agreement, your monthly Base Rent is scheduled to escalate on ${escalationDate}.\n\nYour new Base Rent amount will be $${newRent.toFixed(2)}.\n\nThis new amount will be reflected on your next invoice. You can view your ledger at any time in your secure portal: https://app.ophircre.com/portal-login\n\nThank you,\nOphirCRE Management`;
+    
+    setEscalationEmailBody(draftEmail);
+    setIsEscalationModalOpen(true);
+  }
+
+  // NEW: Executes the final approved numbers
+  async function executeEscalation() {
+    setIsExecuting(true);
+    try {
+      const finalRent = Number(suggestedNewRent);
+
+      // 1. Update the database
+      await supabase.from('leases').update({
+        base_rent_amount: finalRent,
+        next_escalation_date: null // Clear it so it doesn't fire again
+      }).eq('id', lease.id);
+
+      // 2. Email the Tenant
+      if (tenant.contact_email) {
+        await fetch('/api/send-email', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: tenant.contact_email,
+            subject: "Official Notice: Rent Escalation",
+            text: escalationEmailBody
+          })
+        });
+        
+        // Log communication
+        await supabase.from('communications').insert([{ tenant_id: tenant.id, subject: 'Official Notice: Rent Escalation', body: escalationEmailBody, type: 'Email', status: 'Sent' }]);
+      }
+
+      alert(`Escalation Executed! Rent increased to $${finalRent.toFixed(2)}.`);
+      setBaseRent(finalRent);
+      setEscalationDate('');
+      setIsEscalationModalOpen(false);
+    } catch (error: any) {
+      alert("Error executing escalation: " + error.message);
+    } finally {
+      setIsExecuting(false);
+    }
   }
 
   if (!tenant) return <div className="p-8 text-gray-500">Loading Tenant 360 Profile...</div>
@@ -90,7 +148,7 @@ export default function TenantProfilePage() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-8 bg-gray-100">
+      <main className="flex-1 overflow-y-auto p-8 bg-gray-100 relative">
         {activeTab === 'lease' && (
           <div className="flex flex-col md:flex-row md:space-x-6 space-y-6 md:space-y-0">
             <div className="w-full md:w-1/3 space-y-6">
@@ -109,7 +167,6 @@ export default function TenantProfilePage() {
                     <p><span className="text-gray-500 block">Property:</span> <span className="font-bold text-blue-600">{lease.spaces?.properties?.name}</span></p>
                     <p><span className="text-gray-500 block">Space / Suite:</span> <span className="font-medium">{lease.spaces?.name}</span></p>
                     <p><span className="text-gray-500 block">Lease Term:</span> <span className="font-medium">{lease.start_date} to {lease.end_date}</span></p>
-                    <p><span className="text-gray-500 block">Status:</span> <span className="font-bold text-green-600 uppercase">{lease.status}</span></p>
                   </div>
                 </div>
               )}
@@ -127,16 +184,9 @@ export default function TenantProfilePage() {
                     <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Insurance Escrow</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right" value={insCharge} onChange={(e) => setInsCharge(Number(e.target.value))} /></div></div>
                   </div>
                   
-                  {/* NEW: Advanced Escalation Rules */}
                   <div className="space-y-3 pt-4 border-t">
-                    <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Automated Rent Escalations</h4>
-                    <p className="text-xs text-gray-500 mb-2">The system will automatically increase the rent and email the tenant 30 days prior to this date.</p>
-                    
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium text-gray-700">Next Bump Date</label>
-                      <input type="date" className="border p-2 rounded w-40 outline-none focus:ring-2 focus:ring-blue-500" value={escalationDate} onChange={(e) => setEscalationDate(e.target.value)} />
-                    </div>
-                    
+                    <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Rent Escalation Rules</h4>
+                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Next Bump Date</label><input type="date" className="border p-2 rounded w-40 outline-none focus:ring-2 focus:ring-blue-500" value={escalationDate} onChange={(e) => setEscalationDate(e.target.value)} /></div>
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium text-gray-700">Bump Type</label>
                       <select className="border p-2 rounded w-40 outline-none focus:ring-2 focus:ring-blue-500 text-sm" value={escalationType} onChange={(e) => setEscalationType(e.target.value)}>
@@ -144,17 +194,16 @@ export default function TenantProfilePage() {
                         <option value="fixed">Fixed Amount ($)</option>
                       </select>
                     </div>
-
                     {escalationType === 'percentage' ? (
-                      <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium text-gray-700">Increase By</label>
-                        <div className="relative"><input type="number" step="0.1" className="border p-2 pr-6 rounded w-32 text-right outline-none focus:ring-2 focus:ring-blue-500" value={escalationPct} onChange={(e) => setEscalationPct(Number(e.target.value))} /><span className="absolute right-3 top-2 text-gray-500">%</span></div>
-                      </div>
+                      <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Increase By</label><div className="relative"><input type="number" step="0.1" className="border p-2 pr-6 rounded w-32 text-right outline-none focus:ring-2 focus:ring-blue-500" value={escalationPct} onChange={(e) => setEscalationPct(Number(e.target.value))} /><span className="absolute right-3 top-2 text-gray-500">%</span></div></div>
                     ) : (
-                      <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium text-gray-700">New Total Base Rent</label>
-                        <div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right outline-none focus:ring-2 focus:ring-blue-500" value={escalationFixed} onChange={(e) => setEscalationFixed(Number(e.target.value))} /></div>
-                      </div>
+                      <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">New Total Base Rent</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right outline-none focus:ring-2 focus:ring-blue-500" value={escalationFixed} onChange={(e) => setEscalationFixed(Number(e.target.value))} /></div></div>
+                    )}
+                    
+                    {escalationDate && (
+                      <button onClick={openEscalationModal} className="w-full mt-2 py-2 rounded font-bold text-white bg-orange-500 hover:bg-orange-600 transition shadow-sm">
+                        ⚡ Review & Execute Escalation
+                      </button>
                     )}
                   </div>
                   
@@ -206,7 +255,6 @@ export default function TenantProfilePage() {
                     <p className="text-sm text-gray-600 mt-1 line-clamp-3">{msg.body}</p>
                   </div>
                 ))}
-                {comms.length === 0 && <p className="text-center text-gray-500 mt-10">No communications found.</p>}
               </div>
             </div>
 
@@ -223,11 +271,52 @@ export default function TenantProfilePage() {
                     <span className="text-xs text-gray-400 block mt-2">{new Date(task.created_at).toLocaleDateString()}</span>
                   </div>
                 ))}
-                {tasks.length === 0 && <p className="text-center text-gray-500 mt-10">No tasks found.</p>}
               </div>
             </div>
           </div>
         )}
+
+        {/* NEW: ESCALATION PREVIEW MODAL */}
+        {isEscalationModalOpen && (
+          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl">
+              <h3 className="text-xl font-bold mb-2 text-gray-800">Review Rent Escalation</h3>
+              <p className="text-sm text-gray-500 mb-6">The system has calculated the new rent based on the lease rules. You can amend the final amount or the notice email below before sending.</p>
+              
+              <div className="space-y-4">
+                <div className="bg-orange-50 p-4 rounded-lg border border-orange-200 flex justify-between items-center">
+                  <span className="font-bold text-orange-800">Calculated New Base Rent:</span>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-gray-500 font-bold">$</span>
+                    <input 
+                      type="number" 
+                      className="border-2 border-orange-300 p-2 pl-6 rounded w-32 text-right font-black text-orange-900 outline-none focus:ring-2 focus:ring-orange-500 bg-white" 
+                      value={suggestedNewRent} 
+                      onChange={(e) => setSuggestedNewRent(e.target.value)} 
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Notice Email to Tenant</label>
+                  <textarea 
+                    className="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 h-48 resize-none text-sm font-serif" 
+                    value={escalationEmailBody} 
+                    onChange={(e) => setEscalationEmailBody(e.target.value)} 
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-6 mt-4 border-t">
+                <button onClick={() => setIsEscalationModalOpen(false)} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded font-medium">Cancel</button>
+                <button onClick={executeEscalation} disabled={isExecuting} className={`px-6 py-2 rounded font-bold text-white transition shadow-sm ${isExecuting ? 'bg-green-400' : 'bg-green-600 hover:bg-green-700'}`}>
+                  {isExecuting ? 'Executing...' : 'Confirm & Send Notice'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </main>
     </>
   )
