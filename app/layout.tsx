@@ -81,7 +81,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   if (isLoading) return <html lang="en"><body><div className="flex h-screen items-center justify-center bg-slate-900 text-white">Loading...</div></body></html>
 
-  const isPublic = pathname === '/login' || pathname.startsWith('/portal') || pathname.startsWith('/vendor-portal') || pathname.startsWith('/apply') || pathname.startsWith('/listings');
+  const isPublic = pathname === '/login' || pathname.startsWith('/portal') || pathname.startsWith('/vendor-portal') || pathname.startsWith('/investor-portal') || pathname.startsWith('/apply') || pathname.startsWith('/listings');
   
   if (!session && !isPublic) {
     if (typeof window !== 'undefined') window.location.href = '/login'; // Keep hard redirect for security bounce
