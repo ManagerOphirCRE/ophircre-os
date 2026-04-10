@@ -252,17 +252,49 @@ export default function TenantPortal() {
               </form>
             </div>
 
-            {/* NEW: Ticket History */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[500px]">
-              <div className="p-6 bg-gray-50 border-b border-gray-200"><h3 className="font-bold text-gray-800">My Tickets</h3></div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {/* NEW: Ticket History with Live Chat */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[600px]">
+              <div className="p-6 bg-gray-50 border-b border-gray-200"><h3 className="font-bold text-gray-800">My Tickets & Messages</h3></div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-6">
                 {myTasks.map(task => (
-                  <div key={task.id} className="p-4 border border-gray-100 rounded-lg shadow-sm bg-white">
-                    <div className="flex justify-between items-start mb-2">
+                  <div key={task.id} className="p-4 border border-gray-200 rounded-xl shadow-sm bg-white">
+                    <div className="flex justify-between items-start mb-2 border-b pb-2">
                       <h4 className="font-semibold text-gray-900 text-sm">{task.title}</h4>
                       <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${task.status === 'Done' ? 'bg-green-100 text-green-800' : task.status === 'In Progress' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>{task.status}</span>
                     </div>
-                    <span className="text-xs text-gray-400 block">{new Date(task.created_at).toLocaleDateString()}</span>
+                    <p className="text-xs text-gray-600 mb-4 whitespace-pre-wrap">{task.description}</p>
+                    
+                    {/* Chat History */}
+                    <div className="bg-gray-50 rounded-lg p-3 space-y-3 mb-3 border border-gray-100 max-h-48 overflow-y-auto">
+                      {(task.comments ||[]).map((msg: any, idx: number) => (
+                        <div key={idx} className={`flex flex-col ${msg.sender === 'Tenant' ? 'items-end' : 'items-start'}`}>
+                          <span className="text-[9px] text-gray-400 font-bold uppercase mb-1">{msg.sender === 'Tenant' ? 'You' : 'Management'} • {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                          <div className={`px-3 py-2 rounded-lg text-xs max-w-[90%] ${msg.sender === 'Tenant' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-gray-200 text-gray-800 rounded-bl-none'}`}>
+                            {msg.text}
+                          </div>
+                        </div>
+                      ))}
+                      {(!task.comments || task.comments.length === 0) && <p className="text-center text-gray-400 text-xs italic py-2">No messages yet.</p>}
+                    </div>
+
+                    {/* Chat Input */}
+                    <form onSubmit={async (e: any) => {
+                      e.preventDefault();
+                      const input = e.target.elements.message;
+                      if (!input.value) return;
+                      const newMsg = { sender: 'Tenant', text: input.value, timestamp: new Date().toISOString() };
+                      const updatedHistory = [...(task.comments || []), newMsg];
+                      try {
+                        await supabase.from('tasks').update({ comments: updatedHistory }).eq('id', task.id);
+                        input.value = '';
+                        // Refresh the list
+                        const { data: tkData } = await supabase.from('tasks').select('*').eq('tenant_id', tenant.id).order('created_at', { ascending: false });
+                        if (tkData) setMyTasks(tkData);
+                      } catch (err: any) { alert("Error: " + err.message); }
+                    }} className="flex space-x-2">
+                      <input type="text" name="message" placeholder="Reply to management..." className="flex-1 border p-2 rounded-lg text-xs outline-none focus:ring-2 focus:ring-blue-500" />
+                      <button type="submit" className="bg-gray-800 hover:bg-black text-white px-3 py-1 rounded-lg font-bold text-xs transition">Send</button>
+                    </form>
                   </div>
                 ))}
                 {myTasks.length === 0 && <p className="text-center text-gray-500 mt-10 text-sm">No recent tickets.</p>}

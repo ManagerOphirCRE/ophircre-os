@@ -6,11 +6,14 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [vendors, setVendors] = useState<any[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [selectedTask, setSelectedTask] = useState<any>(null);
+  const[selectedTask, setSelectedTask] = useState<any>(null);
   
-  // Bidding State
   const[selectedVendorId, setSelectedVendorId] = useState('');
   const [taskBids, setTaskBids] = useState<any[]>([]);
+
+  // NEW: Chat State
+  const [chatMessage, setChatMessage] = useState('');
+  const[chatHistory, setChatHistory] = useState<any[]>([]);
 
   useEffect(function loadData() {
     fetchData();
@@ -30,6 +33,7 @@ export default function TasksPage() {
 
   function openTask(task: any) {
     setSelectedTask(task);
+    setChatHistory(task.comments ||[]); // Load existing chat history
     fetchBids(task.id);
   }
 
@@ -54,30 +58,44 @@ export default function TasksPage() {
   async function requestBid() {
     if (!selectedVendorId) return alert("Select a vendor first.");
     try {
-      // Check if already requested
       const existing = taskBids.find(b => b.vendor_id === selectedVendorId);
       if (existing) return alert("You already requested a bid from this vendor.");
-
       await supabase.from('task_bids').insert([{ task_id: selectedTask.id, vendor_id: selectedVendorId, status: 'Pending' }]);
-      alert("Bid requested! The vendor will see this in their portal.");
-      fetchBids(selectedTask.id);
+      alert("Bid requested!"); fetchBids(selectedTask.id);
     } catch (error: any) { alert("Error: " + error.message); }
   }
 
   async function awardJob(bidId: string) {
-    if (!confirm("Award the job to this vendor? All other bids will be rejected.")) return;
+    if (!confirm("Award the job to this vendor?")) return;
     try {
-      // Mark this bid as Awarded
       await supabase.from('task_bids').update({ status: 'Awarded' }).eq('id', bidId);
-      // Mark others as Rejected
       await supabase.from('task_bids').update({ status: 'Rejected' }).eq('task_id', selectedTask.id).neq('id', bidId);
-      // Move task to In Progress
       await supabase.from('tasks').update({ status: 'In Progress' }).eq('id', selectedTask.id);
-      
-      alert("Job Awarded!");
-      fetchBids(selectedTask.id);
-      fetchData();
+      alert("Job Awarded!"); fetchBids(selectedTask.id); fetchData();
     } catch (error: any) { alert("Error: " + error.message); }
+  }
+
+  // --- NEW: CHAT LOGIC ---
+  async function sendChatMessage(e: any) {
+    e.preventDefault();
+    if (!chatMessage) return;
+
+    const newMessage = {
+      sender: 'Management',
+      text: chatMessage,
+      timestamp: new Date().toISOString()
+    };
+
+    const updatedHistory = [...chatHistory, newMessage];
+
+    try {
+      await supabase.from('tasks').update({ comments: updatedHistory }).eq('id', selectedTask.id);
+      setChatHistory(updatedHistory);
+      setChatMessage('');
+      fetchData(); // Refresh main list so data stays in sync
+    } catch (error: any) {
+      alert("Error sending message: " + error.message);
+    }
   }
 
   const todoTasks = tasks.filter(t => t.status === 'To Do' || t.status === 'New');
@@ -94,7 +112,7 @@ export default function TasksPage() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-8 relative">
+      <main className="flex-1 overflow-y-auto p-8 relative bg-gray-100">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
           <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
             <h3 className="font-bold text-gray-700 mb-4">To Do ({todoTasks.length})</h3>
@@ -135,54 +153,80 @@ export default function TasksPage() {
         {/* TASK DETAILS MODAL */}
         {selectedTask && (
           <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
+              
               <div className="flex justify-between items-start mb-4 border-b pb-4">
                 <h3 className="text-xl font-bold text-gray-800 pr-4">{selectedTask.title}</h3>
                 <span className="bg-gray-100 text-gray-600 px-3 py-1 rounded text-xs font-bold uppercase tracking-wider whitespace-nowrap">{selectedTask.status}</span>
               </div>
               
-              <div className="flex-1 overflow-y-auto mb-6 space-y-4 text-sm pr-2">
-                {selectedTask.tenants && <p><strong className="text-gray-700">Linked Tenant:</strong> <span className="text-blue-600 font-bold">{selectedTask.tenants.name}</span></p>}
-                {selectedTask.properties && <p><strong className="text-gray-700">Linked Property:</strong> {selectedTask.properties.name}</p>}
-                <div>
-                  <strong className="text-gray-700">Description / Notes:</strong>
-                  <p className="mt-2 p-4 bg-gray-50 rounded-lg border border-gray-200 text-gray-800 whitespace-pre-wrap font-mono text-xs leading-relaxed">
-                    {selectedTask.description || 'No description provided.'}
-                  </p>
-                </div>
-
-                {/* VENDOR BIDDING CENTER */}
-                <div className="bg-orange-50 p-4 rounded-lg border border-orange-200 mt-4">
-                  <strong className="text-orange-800 block mb-2">Vendor Bidding (RFP)</strong>
-                  
-                  <div className="flex space-x-2 mb-4">
-                    <select className="flex-1 border p-2 rounded outline-none" value={selectedVendorId} onChange={(e) => setSelectedVendorId(e.target.value)}>
-                      <option value="">-- Select Vendor to Request Bid --</option>
-                      {vendors.map(v => <option key={v.id} value={v.id}>{v.company_name} ({v.trade})</option>)}
-                    </select>
-                    <button onClick={requestBid} className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded font-bold transition">Request Quote</button>
+              <div className="flex-1 overflow-y-auto mb-6 flex flex-col md:flex-row md:space-x-8 space-y-6 md:space-y-0">
+                
+                {/* LEFT COLUMN: Details & Bidding */}
+                <div className="w-full md:w-1/2 space-y-4 text-sm pr-2">
+                  {selectedTask.tenants && <p><strong className="text-gray-700">Linked Tenant:</strong> <span className="text-blue-600 font-bold">{selectedTask.tenants.name}</span></p>}
+                  {selectedTask.properties && <p><strong className="text-gray-700">Linked Property:</strong> {selectedTask.properties.name}</p>}
+                  <div>
+                    <strong className="text-gray-700">Description / Notes:</strong>
+                    <p className="mt-2 p-4 bg-gray-50 rounded-lg border border-gray-200 text-gray-800 whitespace-pre-wrap font-mono text-xs leading-relaxed">
+                      {selectedTask.description || 'No description provided.'}
+                    </p>
                   </div>
 
-                  {taskBids.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-bold text-gray-500 uppercase">Incoming Bids</p>
-                      {taskBids.map(bid => (
-                        <div key={bid.id} className="bg-white p-3 rounded border flex justify-between items-center">
-                          <div>
-                            <p className="font-bold text-gray-800">{bid.vendors?.company_name}</p>
-                            <p className="text-xs text-gray-500">{bid.notes || 'No notes provided.'}</p>
-                          </div>
-                          <div className="text-right flex items-center space-x-4">
-                            <span className="font-black text-green-700">${Number(bid.bid_amount).toLocaleString()}</span>
-                            {bid.status === 'Pending' && <button onClick={() => awardJob(bid.id)} className="bg-green-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-green-700">Award Job</button>}
-                            {bid.status === 'Awarded' && <span className="text-green-600 font-bold text-xs uppercase">✓ Awarded</span>}
-                            {bid.status === 'Rejected' && <span className="text-red-500 font-bold text-xs uppercase">Rejected</span>}
-                          </div>
-                        </div>
-                      ))}
+                  <div className="bg-orange-50 p-4 rounded-lg border border-orange-200 mt-4">
+                    <strong className="text-orange-800 block mb-2">Vendor Bidding (RFP)</strong>
+                    <div className="flex space-x-2 mb-4">
+                      <select className="flex-1 border p-2 rounded outline-none" value={selectedVendorId} onChange={(e) => setSelectedVendorId(e.target.value)}>
+                        <option value="">-- Select Vendor --</option>
+                        {vendors.map(v => <option key={v.id} value={v.id}>{v.company_name} ({v.trade})</option>)}
+                      </select>
+                      <button onClick={requestBid} className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded font-bold transition">Request Quote</button>
                     </div>
-                  )}
+
+                    {taskBids.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-bold text-gray-500 uppercase">Incoming Bids</p>
+                        {taskBids.map(bid => (
+                          <div key={bid.id} className="bg-white p-3 rounded border flex justify-between items-center">
+                            <div>
+                              <p className="font-bold text-gray-800">{bid.vendors?.company_name}</p>
+                              <p className="text-xs text-gray-500">{bid.notes || 'No notes provided.'}</p>
+                            </div>
+                            <div className="text-right flex items-center space-x-4">
+                              <span className="font-black text-green-700">${Number(bid.bid_amount).toLocaleString()}</span>
+                              {bid.status === 'Pending' && <button onClick={() => awardJob(bid.id)} className="bg-green-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-green-700">Award Job</button>}
+                              {bid.status === 'Awarded' && <span className="text-green-600 font-bold text-xs uppercase">✓ Awarded</span>}
+                              {bid.status === 'Rejected' && <span className="text-red-500 font-bold text-xs uppercase">Rejected</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+                {/* RIGHT COLUMN: Live Chat */}
+                <div className="w-full md:w-1/2 flex flex-col border-l pl-8">
+                  <strong className="text-gray-700 mb-2">Live Chat with Tenant</strong>
+                  
+                  <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg p-4 overflow-y-auto space-y-3 mb-4 h-64">
+                    {chatHistory.map((msg, idx) => (
+                      <div key={idx} className={`flex flex-col ${msg.sender === 'Management' ? 'items-end' : 'items-start'}`}>
+                        <span className="text-[10px] text-gray-400 font-bold uppercase mb-1">{msg.sender} • {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        <div className={`px-4 py-2 rounded-lg text-sm max-w-[85%] ${msg.sender === 'Management' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-gray-200 text-gray-800 rounded-bl-none'}`}>
+                          {msg.text}
+                        </div>
+                      </div>
+                    ))}
+                    {chatHistory.length === 0 && <p className="text-center text-gray-400 text-sm mt-10">No messages yet.</p>}
+                  </div>
+
+                  <form onSubmit={sendChatMessage} className="flex space-x-2">
+                    <input type="text" placeholder="Type a message..." className="flex-1 border p-2 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" value={chatMessage} onChange={(e) => setChatMessage(e.target.value)} />
+                    <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold transition">Send</button>
+                  </form>
+                </div>
+
               </div>
 
               <div className="flex justify-between border-t pt-4 items-center">

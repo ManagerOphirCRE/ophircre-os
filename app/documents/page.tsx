@@ -4,12 +4,12 @@ import { supabase } from '@/app/utils/supabase';
 
 export default function DocumentsPage() {
   const [files, setFiles] = useState<any[]>([]);
-  const [uploading, setUploading] = useState(false);
+  const[uploading, setUploading] = useState(false);
   const [userEmail, setUserEmail] = useState('');
+  const[syncingFile, setSyncingFile] = useState<string | null>(null);
 
   useEffect(function loadDocs() {
     async function fetchFiles() {
-      // Get the logged-in user for the security watermark
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.email) setUserEmail(session.user.email);
 
@@ -22,9 +22,7 @@ export default function DocumentsPage() {
   async function uploadFile(event: any) {
     try {
       setUploading(true);
-      const file = event.target.files[0];
-      if (!file) return;
-
+      const file = event.target.files[0]; if (!file) return;
       const fileExt = file.name.split('.').pop();
       const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
 
@@ -32,19 +30,35 @@ export default function DocumentsPage() {
       if (error) throw error;
       
       alert('File uploaded successfully!');
-      
       const { data } = await supabase.storage.from('documents').list();
       if (data) setFiles(data.filter(f => f.name !== '.emptyFolderPlaceholder'));
-    } catch (error: any) {
-      alert('Error uploading: ' + error.message);
-    } finally {
-      setUploading(false);
-    }
+    } catch (error: any) { alert('Error: ' + error.message); } finally { setUploading(false); }
   }
 
   function getFileUrl(fileName: string) {
     const { data } = supabase.storage.from('documents').getPublicUrl(fileName);
     return data.publicUrl;
+  }
+
+  // NEW: Google Drive Sync
+  async function backupToDrive(fileName: string) {
+    if (!userEmail) return alert("You must be logged in.");
+    setSyncingFile(fileName);
+    try {
+      const res = await fetch('/api/drive-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName, userEmail })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
+      alert(`Successfully backed up to Google Drive!\nView it here: ${data.driveLink}`);
+    } catch (error: any) {
+      alert("Sync Error: " + error.message + "\n(Make sure you connected your Google account in the Workspace tab!)");
+    } finally {
+      setSyncingFile(null);
+    }
   }
 
   return (
@@ -58,8 +72,6 @@ export default function DocumentsPage() {
       </header>
 
       <main className="flex-1 overflow-y-auto p-8 relative bg-gray-100">
-        
-        {/* SECURITY WATERMARK OVERLAY */}
         <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden opacity-[0.03] flex flex-wrap justify-center items-center">
           {Array.from({ length: 50 }).map((_, i) => (
             <div key={i} className="transform -rotate-45 text-2xl font-black text-black p-8 whitespace-nowrap">
@@ -82,8 +94,16 @@ export default function DocumentsPage() {
                 <tr key={file.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">📄 {file.name}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{(file.metadata.size / 1024).toFixed(2)} KB</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <a href={getFileUrl(file.name)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-4">
+                    {/* NEW: Backup Button */}
+                    <button 
+                      onClick={() => backupToDrive(file.name)} 
+                      disabled={syncingFile === file.name}
+                      className="text-green-600 hover:text-green-800 font-bold"
+                    >
+                      {syncingFile === file.name ? 'Syncing...' : '☁️ Backup to Drive'}
+                    </button>
+                    <a href={getFileUrl(file.name)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-900 font-bold">
                       View / Download
                     </a>
                   </td>

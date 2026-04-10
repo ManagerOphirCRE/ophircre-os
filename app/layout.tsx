@@ -27,6 +27,7 @@ const NAV_LINKS =[
   { name: 'Inventory', path: '/inventory', allowed:['admin', 'manager', 'maintenance', 'assistant'] },
   { name: 'Filing Cabinet', path: '/documents', allowed: ['admin', 'manager', 'accountant', 'assistant'] },
   { name: 'Deal Analyzer', path: '/deal-analyzer', allowed: ['admin'] },
+  { name: 'Investor Management', path: '/investors', allowed: ['admin'] },
   { name: 'Credential Vault', path: '/vault', allowed: ['admin'] },
   { name: 'AI Scanner', path: '/ai-scanner', allowed: ['admin', 'manager', 'accountant'] },
   { name: 'AI Auditor', path: '/ai-auditor', allowed: ['admin', 'accountant'] },
