@@ -12,6 +12,8 @@ const NAV_LINKS =[
   { name: 'Dashboard', path: '/', allowed: ['admin', 'manager', 'accountant', 'assistant', 'maintenance'] },
   { name: 'Inbox & Workspace', path: '/workspace', allowed: ['admin', 'manager', 'assistant'] },
   { name: 'Properties', path: '/properties', allowed:['admin', 'manager', 'accountant', 'assistant'] },
+  { name: 'Legal Entities (LLCs)', path: '/entities', allowed: ['admin'] },
+  { name: 'CapEx & Depreciation', path: '/capex', allowed:['admin', 'accountant'] },
   { name: 'Broker CRM & Tours', path: '/brokers', allowed: ['admin', 'manager'] },
   { name: 'IoT Smart Devices', path: '/iot', allowed:['admin', 'manager', 'maintenance'] },
   { name: 'Rent Roll', path: '/rent-roll', allowed:['admin', 'manager', 'accountant'] },
