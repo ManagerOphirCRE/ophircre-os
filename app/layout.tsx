@@ -3,35 +3,36 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { useEffect, useState } from "react";
 import { supabase } from "@/app/utils/supabase";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import Link from "next/link"; // NEW: Next.js Link component
 
 const inter = Inter({ subsets:["latin"] });
 
 const NAV_LINKS =[
-  { name: 'Dashboard', path: '/', allowed:['admin', 'manager', 'accountant', 'assistant', 'maintenance'] },
-  { name: 'Deal Analyzer', path: '/deal-analyzer', allowed: ['admin'] },
+  { name: 'Dashboard', path: '/', allowed: ['admin', 'manager', 'accountant', 'assistant', 'maintenance'] },
+  { name: 'Inbox & Workspace', path: '/workspace', allowed: ['admin', 'manager', 'assistant'] },
   { name: 'Properties', path: '/properties', allowed:['admin', 'manager', 'accountant', 'assistant'] },
-  { name: 'Listings Manager', path: '/listings-manager', allowed: ['admin', 'manager'] },
-  { name: 'Rent Roll', path: '/rent-roll', allowed: ['admin', 'manager', 'accountant'] },
+  { name: 'Rent Roll', path: '/rent-roll', allowed:['admin', 'manager', 'accountant'] },
   { name: 'Compliance & COI', path: '/compliance', allowed: ['admin', 'manager', 'assistant'] },
-  { name: 'Tenants & Leases', path: '/tenants', allowed:['admin', 'manager', 'accountant', 'assistant'] },
-  { name: 'Tenant Billing', path: '/billing', allowed:['admin', 'accountant'] },
+  { name: 'Tenants & Leases', path: '/tenants', allowed: ['admin', 'manager', 'accountant', 'assistant'] },
+  { name: 'Tenant Billing', path: '/billing', allowed: ['admin', 'accountant'] },
   { name: 'Vendors', path: '/vendors', allowed:['admin', 'manager', 'accountant', 'assistant'] },
-  { name: 'Staff Timesheets', path: '/timesheets', allowed: ['admin', 'manager', 'accountant'] },
+  { name: 'Staff Timesheets', path: '/timesheets', allowed:['admin', 'manager', 'accountant'] },
   { name: 'Leasing Pipeline', path: '/leasing', allowed: ['admin', 'manager'] },
+  { name: 'Listings Manager', path: '/listings-manager', allowed: ['admin', 'manager'] },
   { name: 'Lease Drafter', path: '/lease-drafter', allowed: ['admin', 'manager'] },
   { name: 'Communications', path: '/communications', allowed: ['admin', 'manager', 'assistant'] },
   { name: 'Task Board', path: '/tasks', allowed: ['admin', 'manager', 'maintenance', 'assistant'] },
-  { name: 'Inspections', path: '/inspections', allowed: ['admin', 'manager', 'maintenance', 'assistant'] },
-  { name: 'Inventory', path: '/inventory', allowed: ['admin', 'manager', 'maintenance', 'assistant'] },
-  { name: 'Filing Cabinet', path: '/documents', allowed:['admin', 'manager', 'accountant', 'assistant'] },
+  { name: 'Inspections', path: '/inspections', allowed:['admin', 'manager', 'maintenance', 'assistant'] },
+  { name: 'Inventory', path: '/inventory', allowed:['admin', 'manager', 'maintenance', 'assistant'] },
+  { name: 'Filing Cabinet', path: '/documents', allowed: ['admin', 'manager', 'accountant', 'assistant'] },
   { name: 'Deal Analyzer', path: '/deal-analyzer', allowed: ['admin'] },
-  { name: 'Credential Vault', path: '/vault', allowed:['admin'] },
-  { name: 'AI Scanner', path: '/ai-scanner', allowed:['admin', 'manager', 'accountant'] },
+  { name: 'Credential Vault', path: '/vault', allowed: ['admin'] },
+  { name: 'AI Scanner', path: '/ai-scanner', allowed: ['admin', 'manager', 'accountant'] },
   { name: 'AI Auditor', path: '/ai-auditor', allowed: ['admin', 'accountant'] },
   { name: 'CAM Reconciliations', path: '/cam-reconciliation', allowed: ['admin', 'accountant'] },
-  { name: '📊 Reports & P&L', path: '/reports', allowed: ['admin', 'accountant'] },
-  { name: 'Financials', path: '/financials', allowed: ['admin', 'accountant'] },
+  { name: '📊 Reports & P&L', path: '/reports', allowed:['admin', 'accountant'] },
+  { name: 'Financials', path: '/financials', allowed:['admin', 'accountant'] },
   { name: 'Security Deposits', path: '/deposits', allowed:['admin', 'accountant'] },
   { name: 'Accounts Payable', path: '/accounts-payable', allowed: ['admin', 'accountant'] },
   { name: 'Vendor Ledger (1099)', path: '/vendor-ledger', allowed: ['admin', 'accountant'] },
@@ -39,43 +40,57 @@ const NAV_LINKS =[
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<any>(null)
-  const[userRole, setUserRole] = useState<string>('assistant')
-  const [isLoading, setIsLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
-  const[isMobileMenuOpen, setIsMobileMenuOpen] = useState(false) // NEW: Mobile Menu State
-  const pathname = usePathname()
+  const [session, setSession] = useState<any>(null);
+  const[userRole, setUserRole] = useState<string>('assistant');
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const[isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  
+  const pathname = usePathname();
+  const router = useRouter(); // NEW: Next.js Router
 
   useEffect(() => {
     async function initAuth() {
-      const { data: { session } } = await supabase.auth.getSession()
-      setSession(session)
+      const { data: { session } } = await supabase.auth.getSession();
+      setSession(session);
       if (session?.user?.email) {
-        const { data: roleData } = await supabase.from('user_roles').select('role').eq('email', session.user.email).single()
-        if (roleData) setUserRole(roleData.role)
+        const { data: roleData } = await supabase.from('user_roles').select('role').eq('email', session.user.email).single();
+        if (roleData) setUserRole(roleData.role);
       }
-      setIsLoading(false)
+      setIsLoading(false);
     }
-    initAuth()
+    initAuth();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => { 
-      setSession(session); if (!session) setUserRole('assistant')
-    })
-    return () => subscription.unsubscribe()
-  },[])
+      setSession(session); if (!session) setUserRole('assistant');
+    });
+    return () => subscription.unsubscribe();
+  },[]);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push('/login'); // UPGRADE: Instant client-side redirect
+  }
+
+  function handleSearch(e: any) {
+    e.preventDefault();
+    if (searchQuery) {
+      router.push(`/search?q=${encodeURIComponent(searchQuery)}`); // UPGRADE
+      setIsMobileMenuOpen(false);
+    }
+  }
 
   if (isLoading) return <html lang="en"><body><div className="flex h-screen items-center justify-center bg-slate-900 text-white">Loading...</div></body></html>
 
-  // NEW: Added '/listings' to the public routes so anyone on the internet can see your vacant spaces!
-  const isPublic = pathname === '/login' || pathname.startsWith('/portal') || pathname.startsWith('/vendor-portal') || pathname.startsWith('/apply') || pathname.startsWith('/listings')
+  const isPublic = pathname === '/login' || pathname.startsWith('/portal') || pathname.startsWith('/vendor-portal') || pathname.startsWith('/apply') || pathname.startsWith('/listings');
   
   if (!session && !isPublic) {
-    if (typeof window !== 'undefined') window.location.href = '/login'
+    if (typeof window !== 'undefined') window.location.href = '/login'; // Keep hard redirect for security bounce
     return <html lang="en"><body></body></html>
   }
 
   if (isPublic) return <html lang="en"><body className={inter.className}>{children}</body></html>
 
-  const visibleLinks = NAV_LINKS.filter(link => link.allowed.includes(userRole))
+  const visibleLinks = NAV_LINKS.filter(link => link.allowed.includes(userRole));
 
   return (
     <html lang="en">
@@ -88,18 +103,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <h1 className="text-2xl font-bold">OphirCRE</h1>
               <p className="text-xs text-blue-400 mt-1 uppercase tracking-widest">{userRole} MODE</p>
             </div>
-            <nav className="flex-1 px-4 space-y-1 overflow-y-auto pb-4">
+            <nav className="flex-1 px-4 space-y-1 overflow-y-auto pb-4 custom-scrollbar">
               {visibleLinks.map(link => (
-                <a key={link.path} href={link.path} className="block px-4 py-2 hover:bg-gray-800 rounded-lg text-sm text-gray-300 transition">{link.name}</a>
+                // UPGRADE: Using <Link> instead of <a> for instant page loads
+                <Link 
+                  key={link.path} 
+                  href={link.path} 
+                  className={`block px-4 py-2 rounded-lg text-sm transition ${pathname === link.path ? 'bg-blue-600 text-white font-bold' : 'text-gray-300 hover:bg-gray-800'}`}
+                >
+                  {link.name}
+                </Link>
               ))}
             </nav>
             <div className="p-4 border-t border-gray-800">
               <p className="text-xs text-gray-400 truncate">{session?.user?.email}</p>
-              <button onClick={() => supabase.auth.signOut().then(() => window.location.href='/login')} className="mt-2 text-xs text-red-400">Sign Out</button>
+              <button onClick={handleLogout} className="mt-2 text-xs text-red-400 hover:text-red-300 font-bold uppercase tracking-wider">Sign Out</button>
             </div>
           </div>
 
-          {/* MOBILE FULL-SCREEN MENU (Hidden by default) */}
+          {/* MOBILE FULL-SCREEN MENU */}
           {isMobileMenuOpen && (
             <div className="fixed inset-0 bg-gray-900 text-white z-50 flex flex-col md:hidden overflow-y-auto">
               <div className="p-4 flex justify-between items-center border-b border-gray-800">
@@ -108,36 +130,33 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
               <nav className="flex-1 p-4 space-y-2">
                 {visibleLinks.map(link => (
-                  <a key={link.path} href={link.path} onClick={() => setIsMobileMenuOpen(false)} className="block px-4 py-3 bg-gray-800 rounded-lg text-sm text-gray-200">{link.name}</a>
+                  <Link key={link.path} href={link.path} onClick={() => setIsMobileMenuOpen(false)} className="block px-4 py-3 bg-gray-800 rounded-lg text-sm text-gray-200">
+                    {link.name}
+                  </Link>
                 ))}
-                <button onClick={() => supabase.auth.signOut().then(() => window.location.href='/login')} className="block w-full text-left px-4 py-3 mt-4 bg-red-900 rounded-lg text-sm text-red-200">Sign Out</button>
+                <button onClick={handleLogout} className="block w-full text-left px-4 py-3 mt-4 bg-red-900 rounded-lg text-sm text-red-200 font-bold">Sign Out</button>
               </nav>
             </div>
           )}
 
           {/* MAIN CONTENT */}
           <div className="flex-1 flex flex-col overflow-hidden mb-16 md:mb-0">
-            
-            {/* TOP HEADER & SEARCH BAR (Fixed for Mobile) */}
             <div className="bg-white border-b border-gray-200 px-4 py-3 flex justify-between items-center print:hidden">
-              <form onSubmit={(e) => { e.preventDefault(); if(searchQuery) window.location.href=`/search?q=${encodeURIComponent(searchQuery)}` }} className="flex w-full max-w-md mr-4">
+              <form onSubmit={handleSearch} className="flex w-full max-w-md mr-4">
                 <input type="text" placeholder="Search..." className="w-full border rounded-l-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                 <button type="submit" className="bg-blue-600 text-white px-4 rounded-r-lg text-sm font-bold">🔍</button>
               </form>
-              
-              {/* Hamburger Button for Mobile */}
               <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden text-2xl">☰</button>
               <div className="hidden md:block text-sm text-gray-500 font-medium">OphirCRE Admin</div>
             </div>
-            
             {children}
           </div>
 
           {/* MOBILE BOTTOM NAV */}
           <div className="md:hidden fixed bottom-0 left-0 right-0 bg-gray-900 text-white flex justify-around p-3 text-xs border-t border-gray-800 z-40 print:hidden">
-            <a href="/" className="flex flex-col items-center">🏠<span>Home</span></a>
-            <a href="/properties" className="flex flex-col items-center">🏢<span>Props</span></a>
-            <a href="/tasks" className="flex flex-col items-center">✅<span>Tasks</span></a>
+            <Link href="/" className="flex flex-col items-center">🏠<span>Home</span></Link>
+            <Link href="/properties" className="flex flex-col items-center">🏢<span>Props</span></Link>
+            <Link href="/tasks" className="flex flex-col items-center">✅<span>Tasks</span></Link>
             <button onClick={() => setIsMobileMenuOpen(true)} className="flex flex-col items-center text-blue-400">☰<span>Menu</span></button>
           </div>
 
