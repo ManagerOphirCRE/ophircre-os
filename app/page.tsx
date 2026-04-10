@@ -36,7 +36,7 @@ export default function Dashboard() {
       const occupancyRate = totalSqft > 0 ? (leasedSqft / totalSqft) * 100 : 0;
 
       // 3. Calculate Arrears (Overdue Rent)
-      const { data: invoices } = await supabase.from('tenant_invoices').select('amount').in('status', ['Unpaid', 'Overdue']);
+      const { data: invoices } = await supabase.from('tenant_invoices').select('amount').in('status',['Unpaid', 'Overdue']);
       const totalArrears = invoices?.reduce((sum, i) => sum + Number(i.amount), 0) || 0;
 
       setStats({ props: pCount || 0, tenants: tCount || 0, tasks: tkCount || 0, occupancy: occupancyRate, arrears: totalArrears });
