@@ -4,20 +4,44 @@ import { supabase } from '@/app/utils/supabase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 export default function Dashboard() {
-  const [stats, setStats] = useState({ props: 0, tenants: 0, tasks: 0 });
+  const [stats, setStats] = useState({ props: 0, tenants: 0, tasks: 0, occupancy: 0, arrears: 0 });
   const [recentTasks, setRecentTasks] = useState<any[]>([]);
   const [recentTxns, setRecentTxns] = useState<any[]>([]);
   const [surveys, setSurveys] = useState<any[]>([]);
-  const [avgRating, setAvgRating] = useState(0);
-  const[chartData, setChartData] = useState<any[]>([]);
+  const[avgRating, setAvgRating] = useState(0);
+  const [chartData, setChartData] = useState<any[]>([]);
 
   useEffect(() => {
     async function loadDashboard() {
+      // 1. Basic Stats
       const { count: pCount } = await supabase.from('properties').select('*', { count: 'exact', head: true });
-      const { count: tCount } = await supabase.from('tenants').select('*', { count: 'exact', head: true });
+      const { count: tCount } = await supabase.from('tenants').select('*', { count: 'exact', head: true }).eq('status', 'active');
       const { count: tkCount } = await supabase.from('tasks').select('*', { count: 'exact', head: true }).neq('status', 'Done');
-      setStats({ props: pCount || 0, tenants: tCount || 0, tasks: tkCount || 0 });
+      
+      // 2. Calculate Occupancy Rate
+      const { data: spaces } = await supabase.from('spaces').select('id, square_footage');
+      const { data: activeLeases } = await supabase.from('leases').select('space_id').eq('status', 'Active');
+      
+      let totalSqft = 0;
+      let leasedSqft = 0;
+      
+      if (spaces && activeLeases) {
+        const leasedSpaceIds = activeLeases.map(l => l.space_id);
+        spaces.forEach(space => {
+          const sqft = Number(space.square_footage || 0);
+          totalSqft += sqft;
+          if (leasedSpaceIds.includes(space.id)) leasedSqft += sqft;
+        });
+      }
+      const occupancyRate = totalSqft > 0 ? (leasedSqft / totalSqft) * 100 : 0;
 
+      // 3. Calculate Arrears (Overdue Rent)
+      const { data: invoices } = await supabase.from('tenant_invoices').select('amount').in('status', ['Unpaid', 'Overdue']);
+      const totalArrears = invoices?.reduce((sum, i) => sum + Number(i.amount), 0) || 0;
+
+      setStats({ props: pCount || 0, tenants: tCount || 0, tasks: tkCount || 0, occupancy: occupancyRate, arrears: totalArrears });
+
+      // Load Recent Data
       const { data: tasks } = await supabase.from('tasks').select('*').order('created_at', { ascending: false }).limit(5);
       if (tasks) setRecentTasks(tasks);
 
@@ -30,6 +54,7 @@ export default function Dashboard() {
         setAvgRating(srvs.reduce((sum, s) => sum + s.rating, 0) / srvs.length);
       }
 
+      // Chart Data
       const { data: journalEntries } = await supabase.from('journal_entries').select('debit, credit, chart_of_accounts(account_type), transactions(date)').order('transactions(date)', { ascending: true });
       if (journalEntries) {
         const monthlyData: Record<string, { name: string, Revenue: number, Expenses: number }> = {};
@@ -52,12 +77,26 @@ export default function Dashboard() {
 
   return (
     <main className="flex-1 overflow-y-auto p-8 bg-gray-100">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><h3 className="text-gray-500 text-sm font-medium">Total Properties</h3><p className="text-3xl font-bold text-gray-800 mt-2">{stats.props}</p></div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><h3 className="text-gray-500 text-sm font-medium">Active Tenants</h3><p className="text-3xl font-bold text-gray-800 mt-2">{stats.tenants}</p></div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><h3 className="text-gray-500 text-sm font-medium">Open Tasks</h3><p className="text-3xl font-bold text-red-600 mt-2">{stats.tasks}</p></div>
+      
+      {/* TOP STATS */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4"><h3 className="text-gray-500 text-xs font-bold uppercase">Properties</h3><p className="text-2xl font-bold text-gray-800 mt-1">{stats.props}</p></div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4"><h3 className="text-gray-500 text-xs font-bold uppercase">Active Tenants</h3><p className="text-2xl font-bold text-gray-800 mt-1">{stats.tenants}</p></div>
+        
+        {/* NEW: Portfolio Health Stats */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 border-l-4 border-l-blue-500">
+          <h3 className="text-gray-500 text-xs font-bold uppercase">Occupancy Rate</h3>
+          <p className="text-2xl font-black text-blue-600 mt-1">{stats.occupancy.toFixed(1)}%</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 border-l-4 border-l-red-500">
+          <h3 className="text-gray-500 text-xs font-bold uppercase">Total Arrears</h3>
+          <p className="text-2xl font-black text-red-600 mt-1">${stats.arrears.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4"><h3 className="text-gray-500 text-xs font-bold uppercase">Open Tasks</h3><p className="text-2xl font-bold text-gray-800 mt-1">{stats.tasks}</p></div>
       </div>
 
+      {/* MIDDLE ROW: Chart & Tasks */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="md:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-6 h-96 flex flex-col">
           <h3 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Cash Flow (Revenue vs Expenses)</h3>
@@ -68,7 +107,6 @@ export default function Dashboard() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#888'}} />
                   <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#888'}} tickFormatter={(value) => `$${value}`} />
-                  {/* FIX: Changed (value: number) to (value: any) to satisfy TypeScript */}
                   <Tooltip cursor={{fill: '#f8fafc'}} formatter={(value: any) => `$${Number(value || 0).toLocaleString()}`} />
                   <Legend iconType="circle" wrapperStyle={{fontSize: '12px'}} />
                   <Bar dataKey="Revenue" fill="#16a34a" radius={[4, 4, 0, 0]} maxBarSize={50} />
@@ -92,6 +130,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* BOTTOM ROW: Tenant Satisfaction */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex justify-between items-center mb-4 border-b pb-2">
           <h3 className="text-lg font-semibold text-gray-800">Tenant Satisfaction</h3>
