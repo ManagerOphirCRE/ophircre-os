@@ -27,12 +27,50 @@ export async function GET(req: Request) {
       tasksCreated += tasks.length;
     }
 
-    // 2. Rent Escalations in 30 days
-    const { data: escalations } = await supabase.from('leases').select('*, tenants(name)').eq('next_escalation_date', target30);
+    // 2. Execute Rent Escalations happening in exactly 30 days
+    const { data: escalations } = await supabase.from('leases').select('*, tenants(name, contact_email)').eq('next_escalation_date', target30);
+    
     if (escalations && escalations.length > 0) {
-      const tasks = escalations.map(l => ({ title: `FINANCE: Rent Escalation for ${l.tenants?.name}`, description: `Rent escalates by ${l.escalation_percentage}% on ${l.next_escalation_date}.`, status: 'To Do', tenant_id: l.tenant_id }));
-      await supabase.from('tasks').insert(tasks);
-      tasksCreated += tasks.length;
+      for (const lease of escalations) {
+        const currentRent = Number(lease.base_rent_amount || 0);
+        let newRent = currentRent;
+
+        // Calculate the new rent based on the rule you set!
+        if (lease.escalation_type === 'percentage') {
+          const pct = Number(lease.escalation_percentage || 0) / 100;
+          newRent = currentRent + (currentRent * pct);
+        } else if (lease.escalation_type === 'fixed') {
+          newRent = Number(lease.escalation_fixed_amount || currentRent);
+        }
+
+        // A. Update the lease in the database
+        await supabase.from('leases').update({
+          base_rent_amount: newRent,
+          next_escalation_date: null // Clear it so it doesn't fire again until you set the next year's date
+        }).eq('id', lease.id);
+
+        // B. Email the Tenant via SendGrid
+        if (lease.tenants?.contact_email) {
+          await fetch('https://app.ophircre.com/api/send-email', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to: lease.tenants.contact_email,
+              subject: "Official Notice: Upcoming Rent Escalation",
+              text: `Hello ${lease.tenants.name},\n\nThis is an automated courtesy notice regarding your lease.\n\nPer the terms of your agreement, your monthly Base Rent is scheduled to escalate on ${lease.next_escalation_date}.\n\nYour new Base Rent amount will be $${newRent.toFixed(2)}.\n\nThis new amount will be reflected on your next invoice. You can view your ledger at any time in your secure portal: https://app.ophircre.com/portal-login\n\nThank you,\nOphirCRE Management`
+            })
+          });
+        }
+
+        // C. Drop a confirmation task on your board
+        await supabase.from('tasks').insert([{ 
+          title: `EXECUTED: Rent Escalation for ${lease.tenants?.name}`, 
+          description: `Rent was automatically increased from $${currentRent} to $${newRent.toFixed(2)}. The tenant was emailed a notice.`, 
+          status: 'Done', 
+          tenant_id: lease.tenant_id 
+        }]);
+        
+        tasksCreated++;
+      }
     }
 
     // 3. Tenant COIs expiring in 30 days

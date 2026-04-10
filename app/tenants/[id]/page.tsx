@@ -1,73 +1,80 @@
-"use client";
-import { useState, useEffect } from 'react';
-import { supabase } from '@/app/utils/supabase';
-import { useParams } from 'next/navigation';
+"use client"
+import { useState, useEffect } from 'react'
+import { supabase } from '@/app/utils/supabase'
+import { useParams } from 'next/navigation'
 
 export default function TenantProfilePage() {
-  const params = useParams();
-  const tenantId = params.id;
+  const params = useParams()
+  const tenantId = params.id
 
-  const [activeTab, setActiveTab] = useState('lease'); // 'lease', 'ledger', 'comms'
-  const [tenant, setTenant] = useState<any>(null);
-  const[lease, setLease] = useState<any>(null);
-  const [isSaving, setIsSaving] = useState(false);
+  const [tenant, setTenant] = useState<any>(null)
+  const[lease, setLease] = useState<any>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState('lease')
+  const [invoices, setInvoices] = useState<any[]>([])
+  const [comms, setComps] = useState<any[]>([])
+  const[tasks, setTasks] = useState<any[]>([])
 
-  // 360 Data State
-  const [invoices, setInvoices] = useState<any[]>([]);
-  const [comms, setComps] = useState<any[]>([]);
-  const [tasks, setTasks] = useState<any[]>([]);
+  // Tenant State
+  const[coiDate, setCoiDate] = useState('')
 
   // Lease Financials State
-  const [baseRent, setBaseRent] = useState(0);
-  const [camCharge, setCamCharge] = useState(0);
-  const [taxCharge, setTaxCharge] = useState(0);
-  const [insCharge, setInsCharge] = useState(0);
-  const [escalationDate, setEscalationDate] = useState('');
-  const [escalationPct, setEscalationPct] = useState(0);
-  const[coiDate, setCoiDate] = useState('');
+  const [baseRent, setBaseRent] = useState(0)
+  const [camCharge, setCamCharge] = useState(0)
+  const [taxCharge, setTaxCharge] = useState(0)
+  const [insCharge, setInsCharge] = useState(0)
+  
+  // NEW: Advanced Escalation State
+  const [escalationDate, setEscalationDate] = useState('')
+  const[escalationType, setEscalationType] = useState('percentage')
+  const[escalationPct, setEscalationPct] = useState(0)
+  const [escalationFixed, setEscalationFixed] = useState(0)
 
-  useEffect(function loadTenant360() {
-    async function fetchData() {
-      const { data: tData } = await supabase.from('tenants').select('*').eq('id', tenantId).single();
+  useEffect(() => {
+    async function fetchTenantData() {
+      const { data: tData } = await supabase.from('tenants').select('*').eq('id', tenantId).single()
       if (tData) { setTenant(tData); setCoiDate(tData.coi_expiration || ''); }
 
-      const { data: lData } = await supabase.from('leases').select('*, spaces(name, properties(name))').eq('tenant_id', tenantId).single();
+      const { data: lData } = await supabase.from('leases').select('*, spaces(name, properties(name))').eq('tenant_id', tenantId).single()
       if (lData) {
         setLease(lData); setBaseRent(lData.base_rent_amount || 0); setCamCharge(lData.cam_charge || 0);
         setTaxCharge(lData.tax_charge || 0); setInsCharge(lData.insurance_charge || 0);
-        setEscalationDate(lData.next_escalation_date || ''); setEscalationPct(lData.escalation_percentage || 0);
+        setEscalationDate(lData.next_escalation_date || ''); 
+        setEscalationType(lData.escalation_type || 'percentage');
+        setEscalationPct(lData.escalation_percentage || 0);
+        setEscalationFixed(lData.escalation_fixed_amount || 0);
       }
 
-      // Fetch 360 CRM Data
-      const { data: iData } = await supabase.from('tenant_invoices').select('*').eq('tenant_id', tenantId).order('due_date', { ascending: false });
-      if (iData) setInvoices(iData);
-
-      const { data: cData } = await supabase.from('communications').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false });
-      if (cData) setComps(cData);
-
-      const { data: tkData } = await supabase.from('tasks').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false });
-      if (tkData) setTasks(tkData);
+      const { data: iData } = await supabase.from('tenant_invoices').select('*').eq('tenant_id', tenantId).order('due_date', { ascending: false })
+      if (iData) setInvoices(iData)
+      const { data: cData } = await supabase.from('communications').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false })
+      if (cData) setComps(cData)
+      const { data: tkData } = await supabase.from('tasks').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false })
+      if (tkData) setTasks(tkData)
     }
-    fetchData();
-  }, [tenantId]);
+    fetchTenantData()
+  },[tenantId])
 
   async function saveProfile() {
-    setIsSaving(true);
+    setIsSaving(true)
     try {
-      await supabase.from('tenants').update({ coi_expiration: coiDate || null }).eq('id', tenantId);
+      await supabase.from('tenants').update({ coi_expiration: coiDate || null }).eq('id', tenantId)
       if (lease) {
         await supabase.from('leases').update({
           base_rent_amount: baseRent, cam_charge: camCharge, tax_charge: taxCharge, insurance_charge: insCharge,
-          next_escalation_date: escalationDate || null, escalation_percentage: escalationPct
-        }).eq('id', lease.id);
+          next_escalation_date: escalationDate || null, 
+          escalation_type: escalationType,
+          escalation_percentage: escalationType === 'percentage' ? escalationPct : 0,
+          escalation_fixed_amount: escalationType === 'fixed' ? escalationFixed : 0
+        }).eq('id', lease.id)
       }
-      alert("Profile and Financials Updated!");
-    } catch (error: any) { alert("Error: " + error.message); } finally { setIsSaving(false); }
+      alert("Profile and Financials Updated! The Auto-Biller will use these new rules.")
+    } catch (error: any) { alert("Error: " + error.message) } finally { setIsSaving(false) }
   }
 
-  if (!tenant) return <div className="p-8 text-gray-500">Loading Tenant 360 Profile...</div>;
+  if (!tenant) return <div className="p-8 text-gray-500">Loading Tenant 360 Profile...</div>
 
-  const unpaidBalance = invoices.filter(i => i.status !== 'Paid').reduce((sum, i) => sum + Number(i.amount), 0);
+  const unpaidBalance = invoices.filter(i => i.status !== 'Paid').reduce((sum, i) => sum + Number(i.amount), 0)
 
   return (
     <>
@@ -84,7 +91,6 @@ export default function TenantProfilePage() {
       </header>
 
       <main className="flex-1 overflow-y-auto p-8 bg-gray-100">
-        
         {activeTab === 'lease' && (
           <div className="flex flex-col md:flex-row md:space-x-6 space-y-6 md:space-y-0">
             <div className="w-full md:w-1/3 space-y-6">
@@ -94,10 +100,7 @@ export default function TenantProfilePage() {
                   <p><span className="text-gray-500 block">Email:</span> <span className="font-medium">{tenant.contact_email || 'N/A'}</span></p>
                   <p><span className="text-gray-500 block">Phone:</span> <span className="font-medium">{tenant.contact_phone || 'N/A'}</span></p>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">COI Expiration Date</label>
-                  <input type="date" className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={coiDate} onChange={(e) => setCoiDate(e.target.value)} />
-                </div>
+                <div><label className="block text-sm font-bold text-gray-700 mb-1">COI Expiration Date</label><input type="date" className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={coiDate} onChange={(e) => setCoiDate(e.target.value)} /></div>
               </div>
               {lease && (
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
@@ -123,18 +126,46 @@ export default function TenantProfilePage() {
                     <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Tax Escrow</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right" value={taxCharge} onChange={(e) => setTaxCharge(Number(e.target.value))} /></div></div>
                     <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Insurance Escrow</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right" value={insCharge} onChange={(e) => setInsCharge(Number(e.target.value))} /></div></div>
                   </div>
+                  
+                  {/* NEW: Advanced Escalation Rules */}
                   <div className="space-y-3 pt-4 border-t">
-                    <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Rent Escalations</h4>
-                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Next Bump Date</label><input type="date" className="border p-2 rounded w-40 outline-none" value={escalationDate} onChange={(e) => setEscalationDate(e.target.value)} /></div>
-                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Increase Percentage</label><div className="relative"><input type="number" step="0.1" className="border p-2 pr-6 rounded w-32 text-right outline-none" value={escalationPct} onChange={(e) => setEscalationPct(Number(e.target.value))} /><span className="absolute right-3 top-2 text-gray-500">%</span></div></div>
+                    <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Automated Rent Escalations</h4>
+                    <p className="text-xs text-gray-500 mb-2">The system will automatically increase the rent and email the tenant 30 days prior to this date.</p>
+                    
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-700">Next Bump Date</label>
+                      <input type="date" className="border p-2 rounded w-40 outline-none focus:ring-2 focus:ring-blue-500" value={escalationDate} onChange={(e) => setEscalationDate(e.target.value)} />
+                    </div>
+                    
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-700">Bump Type</label>
+                      <select className="border p-2 rounded w-40 outline-none focus:ring-2 focus:ring-blue-500 text-sm" value={escalationType} onChange={(e) => setEscalationType(e.target.value)}>
+                        <option value="percentage">Percentage (%)</option>
+                        <option value="fixed">Fixed Amount ($)</option>
+                      </select>
+                    </div>
+
+                    {escalationType === 'percentage' ? (
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-gray-700">Increase By</label>
+                        <div className="relative"><input type="number" step="0.1" className="border p-2 pr-6 rounded w-32 text-right outline-none focus:ring-2 focus:ring-blue-500" value={escalationPct} onChange={(e) => setEscalationPct(Number(e.target.value))} /><span className="absolute right-3 top-2 text-gray-500">%</span></div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-gray-700">New Total Base Rent</label>
+                        <div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right outline-none focus:ring-2 focus:ring-blue-500" value={escalationFixed} onChange={(e) => setEscalationFixed(Number(e.target.value))} /></div>
+                      </div>
+                    )}
                   </div>
-                  <button onClick={saveProfile} disabled={isSaving} className="w-full mt-6 py-3 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-sm">{isSaving ? 'Saving...' : 'Save Financials'}</button>
+                  
+                  <button onClick={saveProfile} disabled={isSaving} className="w-full mt-6 py-3 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-sm">{isSaving ? 'Saving...' : 'Save Financials & Rules'}</button>
                 </div>
               ) : <div className="p-4 bg-yellow-50 text-yellow-800 rounded border border-yellow-200 text-sm">No active lease attached.</div>}
             </div>
           </div>
         )}
 
+        {/* Ledger and Comms Tabs remain unchanged below... */}
         {activeTab === 'ledger' && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="p-6 bg-gray-50 border-b flex justify-between items-center">
@@ -143,12 +174,7 @@ export default function TenantProfilePage() {
             </div>
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-white">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Due Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Description</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Amount</th>
-                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Status</th>
-                </tr>
+                <tr><th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Due Date</th><th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Description</th><th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Amount</th><th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Status</th></tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {invoices.map(inv => (
@@ -202,8 +228,7 @@ export default function TenantProfilePage() {
             </div>
           </div>
         )}
-
       </main>
     </>
-  );
+  )
 }
