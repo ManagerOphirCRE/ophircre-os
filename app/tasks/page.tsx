@@ -93,13 +93,36 @@ async function dispatchToVendor() {
   }
 
   async function awardJob(bidId: string) {
-    if (!confirm("Award the job to this vendor?")) return;
+    if (!confirm("Award the job to this vendor? They will receive an SMS notification.")) return;
     try {
+      // 1. Update database statuses
       await supabase.from('task_bids').update({ status: 'Awarded' }).eq('id', bidId);
       await supabase.from('task_bids').update({ status: 'Rejected' }).eq('task_id', selectedTask.id).neq('id', bidId);
       await supabase.from('tasks').update({ status: 'In Progress' }).eq('id', selectedTask.id);
-      alert("Job Awarded!"); fetchBids(selectedTask.id); fetchData();
-    } catch (error: any) { alert("Error: " + error.message); }
+      
+      // 2. Find the winning bid to get the vendor's phone number
+      const winningBid = taskBids.find(b => b.id === bidId);
+      const vendorPhone = winningBid?.vendors?.contact_phone;
+
+      // 3. Send SMS via Twilio
+      if (vendorPhone) {
+        const formattedPhone = vendorPhone.startsWith('+') ? vendorPhone : `+1${vendorPhone.replace(/\D/g,'')}`;
+        await fetch('/api/send-sms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: formattedPhone,
+            body: `WORK ORDER AWARDED: ${selectedTask.title} at ${selectedTask.properties?.name || 'the property'}. Please log into your vendor portal to view details and submit your invoice: https://app.ophircre.com/vendor-portal`
+          })
+        });
+      }
+
+      alert("Job Awarded and SMS dispatched to the vendor!");
+      fetchBids(selectedTask.id);
+      fetchData();
+    } catch (error: any) { 
+      alert("Error: " + error.message); 
+    }
   }
 
   // --- NEW: CHAT LOGIC ---
