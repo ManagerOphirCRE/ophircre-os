@@ -53,7 +53,34 @@ export default function TasksPage() {
     await supabase.from('tasks').delete().eq('id', id);
     fetchData(); setSelectedTask(null);
   }
+async function dispatchToVendor() {
+    if (!selectedVendorId) return alert("Select a vendor first.");
+    const vendor = vendors.find(v => v.id === selectedVendorId);
+    
+    try {
+      // 1. Update the task status
+      await moveTask(selectedTask.id, 'In Progress');
 
+      // 2. Send SMS via Twilio
+      if (vendor.contact_phone) {
+        // Format phone number to E.164 format (+1...)
+        const formattedPhone = vendor.contact_phone.startsWith('+') ? vendor.contact_phone : `+1${vendor.contact_phone.replace(/\D/g,'')}`;
+        
+        await fetch('/api/send-sms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: formattedPhone,
+            body: `WORK ORDER: ${selectedTask.title} at ${selectedTask.properties?.name || 'the property'}. Please log into your vendor portal to submit your invoice when complete: https://app.ophircre.com/vendor-portal`
+          })
+        });
+      }
+
+      alert(`Work Order Dispatched! An SMS text message has been sent to ${vendor.company_name}.`);
+    } catch (error: any) {
+      alert("Dispatch Error: " + error.message + "\n(Note: Make sure your Twilio keys are in Vercel!)");
+    }
+  }
   // --- VENDOR BIDDING LOGIC ---
   async function requestBid() {
     if (!selectedVendorId) return alert("Select a vendor first.");
