@@ -5,75 +5,86 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/app/utils/supabase";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { OrgProvider } from "@/app/context/OrgContext"; // NEW IMPORT
+import { OrgProvider } from "@/app/context/OrgContext";
 
 const inter = Inter({ subsets: ["latin"] });
 
 const NAV_LINKS =[
   { name: 'Dashboard', path: '/', allowed: ['admin', 'manager', 'accountant', 'assistant', 'maintenance'] },
   { name: 'Workspace', path: '/workspace', allowed: ['admin', 'manager', 'assistant'] },
-  { name: 'Properties', path: '/properties', allowed:['admin', 'manager', 'accountant', 'assistant'] },
+  { name: 'Properties', path: '/properties', allowed: ['admin', 'manager', 'accountant', 'assistant'] },
   { name: 'Rent Roll', path: '/rent-roll', allowed:['admin', 'manager', 'accountant'] },
-  { name: 'Compliance', path: '/compliance', allowed: ['admin', 'manager', 'assistant'] },
-  { name: 'Tenants', path: '/tenants', allowed: ['admin', 'manager', 'accountant', 'assistant'] },
+  { name: 'Compliance', path: '/compliance', allowed:['admin', 'manager', 'assistant'] },
+  { name: 'Tenants', path: '/tenants', allowed:['admin', 'manager', 'accountant', 'assistant'] },
   { name: 'Billing', path: '/billing', allowed: ['admin', 'accountant'] },
   { name: 'Vendors', path: '/vendors', allowed: ['admin', 'manager', 'accountant', 'assistant'] },
-  { name: 'Timesheets', path: '/timesheets', allowed:['admin', 'manager', 'accountant'] },
+  { name: 'Timesheets', path: '/timesheets', allowed: ['admin', 'manager', 'accountant'] },
   { name: 'Pipeline', path: '/leasing', allowed: ['admin', 'manager'] },
-  { name: 'Listings', path: '/listings-manager', allowed:['admin', 'manager'] },
-  { name: 'Lease Drafter', path: '/lease-drafter', allowed:['admin', 'manager'] },
+  { name: 'Listings', path: '/listings-manager', allowed: ['admin', 'manager'] },
+  { name: 'Lease Drafter', path: '/lease-drafter', allowed: ['admin', 'manager'] },
   { name: 'Comms', path: '/communications', allowed:['admin', 'manager', 'assistant'] },
   { name: 'Tasks', path: '/tasks', allowed:['admin', 'manager', 'maintenance', 'assistant'] },
   { name: 'Inspections', path: '/inspections', allowed: ['admin', 'manager', 'maintenance', 'assistant'] },
   { name: 'Inventory', path: '/inventory', allowed: ['admin', 'manager', 'maintenance', 'assistant'] },
-  { name: 'Files', path: '/documents', allowed:['admin', 'manager', 'accountant', 'assistant'] },
-  { name: 'Deals', path: '/deal-analyzer', allowed:['admin'] },
+  { name: 'Files', path: '/documents', allowed: ['admin', 'manager', 'accountant', 'assistant'] },
+  { name: 'Deals', path: '/deal-analyzer', allowed: ['admin'] },
   { name: 'Investors', path: '/investors', allowed: ['admin'] },
   { name: 'Vault', path: '/vault', allowed: ['admin'] },
   { name: 'AI Scanner', path: '/ai-scanner', allowed: ['admin', 'manager', 'accountant'] },
-  { name: 'AI Auditor', path: '/ai-auditor', allowed:['admin', 'accountant'] },
-  { name: 'CAM', path: '/cam-reconciliation', allowed:['admin', 'accountant'] },
-  { name: 'Reports', path: '/reports', allowed:['admin', 'accountant'] },
-  { name: 'Tax Center', path: '/tax-center', allowed:['admin', 'accountant'] },
-  { name: 'Financials', path: '/financials', allowed:['admin', 'accountant'] },
-  { name: 'Deposits', path: '/deposits', allowed:['admin', 'accountant'] },
-  { name: 'Payables', path: '/accounts-payable', allowed: ['admin', 'accountant'] },
+  { name: 'AI Auditor', path: '/ai-auditor', allowed: ['admin', 'accountant'] },
+  { name: 'CAM', path: '/cam-reconciliation', allowed: ['admin', 'accountant'] },
+  { name: 'Reports', path: '/reports', allowed: ['admin', 'accountant'] },
+  { name: 'Tax Center', path: '/tax-center', allowed: ['admin', 'accountant'] },
+  { name: 'Financials', path: '/financials', allowed: ['admin', 'accountant'] },
+  { name: 'Deposits', path: '/deposits', allowed: ['admin', 'accountant'] },
+  { name: 'Payables', path: '/accounts-payable', allowed:['admin', 'accountant'] },
   { name: '1099 Ledger', path: '/vendor-ledger', allowed: ['admin', 'accountant'] },
-  { name: 'Settings', path: '/settings', allowed: ['admin'] },
-  { name: '👑 Super Admin', path: '/super-admin', allowed: ['super_admin'] }
+  { name: 'Settings', path: '/settings', allowed:['admin'] },
+  { name: '👑 Super Admin', path: '/super-admin', allowed:['super_admin'] }
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<any>(null);
+  const[session, setSession] = useState<any>(null);
   const [userRole, setUserRole] = useState<string>('assistant');
   const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const[isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const[searchQuery, setSearchQuery] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   const pathname = usePathname();
   const router = useRouter();
 
   useEffect(() => {
     let mounted = true;
+    
     async function initAuth() {
       const { data: { session } } = await supabase.auth.getSession();
       if (mounted) setSession(session);
+      
       if (session?.user?.email && mounted) {
-        const { data } = await supabase.from('user_roles').select('role').eq('email', session.user.email).single();
         if (session.user.email === 'manager@ophircre.com') {
           setUserRole('super_admin');
-        } else if (data) {
-          setUserRole(data.role);
+        } else {
+          const { data } = await supabase.from('user_roles').select('role').eq('email', session.user.email).single();
+          if (data) setUserRole(data.role);
         }
       }
       if (mounted) setIsLoading(false);
     }
+    
     initAuth();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => { 
-      if (mounted) { setSession(session); if (!session) setUserRole('assistant'); }
+    
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, newSession) => { 
+      if (mounted) { 
+        setSession(newSession); 
+        if (!newSession) setUserRole('assistant'); 
+      }
     });
-    return () => { mounted = false; subscription.unsubscribe(); };
-  },[]);
+    
+    return () => { 
+      mounted = false; 
+      authListener.subscription.unsubscribe(); 
+    };
+  }, [ /* dependencies */ ]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -88,7 +99,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     }
   }
 
-  if (isLoading) return <html lang="en"><body><div className="flex h-screen items-center justify-center bg-slate-900 text-white">Loading...</div></body></html>;
+  if (isLoading) {
+    return <html lang="en"><body><div className="flex h-screen items-center justify-center bg-slate-900 text-white">Loading...</div></body></html>;
+  }
 
   const isPublic = pathname === '/login' || pathname.startsWith('/portal') || pathname.startsWith('/vendor-portal') || pathname.startsWith('/apply') || pathname.startsWith('/listings') || pathname.startsWith('/investor-portal') || pathname.startsWith('/saas-onboarding');
   
@@ -97,14 +110,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     return <html lang="en"><body></body></html>;
   }
 
-  if (isPublic) return <html lang="en"><body className={inter.className}>{children}</body></html>;
+  if (isPublic) {
+    return <html lang="en"><body className={inter.className}>{children}</body></html>;
+  }
 
-  const visibleLinks = NAV_LINKS.filter(link => link.allowed.includes(userRole));
+  // FIX: If you are the Super Admin, you see ALL links. Otherwise, filter by role.
+  const visibleLinks = userRole === 'super_admin' ? NAV_LINKS : NAV_LINKS.filter(link => link.allowed.includes(userRole));
 
   return (
     <html lang="en">
       <body className={inter.className}>
-        {/* NEW: Wrapping the entire app in the OrgProvider */}
         <OrgProvider>
           <div className="flex h-screen bg-gray-100 flex-col md:flex-row">
             
@@ -114,7 +129,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <h1 className="text-2xl font-bold">OphirCRE</h1>
                 <p className="text-xs text-blue-400 mt-1 uppercase tracking-widest">{userRole} MODE</p>
               </div>
-              <nav className="flex-1 px-4 space-y-1 overflow-y-auto pb-4">
+              <nav className="flex-1 px-4 space-y-1 overflow-y-auto pb-4 custom-scrollbar">
                 {visibleLinks.map(link => (
                   <Link key={link.path} href={link.path} className={`block px-4 py-2 rounded-lg text-sm transition ${pathname === link.path ? 'bg-blue-600 text-white font-bold' : 'text-gray-300 hover:bg-gray-800'}`}>
                     {link.name}
