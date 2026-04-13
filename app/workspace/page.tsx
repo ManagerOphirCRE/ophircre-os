@@ -6,7 +6,7 @@ import { useOrg } from '@/app/context/OrgContext';
 export default function WorkspacePage() {
   const { orgId } = useOrg();
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const[isSyncing, setIsSyncing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
   const [emails, setEmails] = useState<any[]>([]);
@@ -14,43 +14,64 @@ export default function WorkspacePage() {
   const [selectedAccount, setSelectedAccount] = useState('ALL');
   
   const [properties, setProperties] = useState<any[]>([]);
-  const [taskModalEmail, setTaskModalEmail] = useState<any>(null);
-  const[selectedPropertyId, setSelectedPropertyId] = useState('');
+  const[taskModalEmail, setTaskModalEmail] = useState<any>(null);
+  const [selectedPropertyId, setSelectedPropertyId] = useState('');
 
   useEffect(() => {
     if (orgId) {
-      fetchDatabaseEmails();
       fetchProperties();
-      syncGmail(); 
+      checkConnectionAndSync();
     }
-  }, [orgId]);
+  },[orgId]);
 
   async function fetchProperties() {
     const { data } = await supabase.from('properties').select('*').order('name');
     if (data) setProperties(data);
   }
 
-  async function fetchDatabaseEmails() {
-    const { data } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
-    if (data && data.length > 0) {
-      setIsGoogleConnected(true);
-      setEmails(data);
-      const uniqueAccounts = Array.from(new Set(data.map(e => e.account_email)));
-      setAccounts(uniqueAccounts as string[]);
+  async function checkConnectionAndSync() {
+    setIsLoading(true);
+    try {
+      // 1. Check if the API says we are connected (bypasses the 0 emails bug)
+      const res = await fetch(`/api/google-workspace?orgId=${orgId}`);
+      const data = await res.json();
+      
+      if (data.connected) {
+        setIsGoogleConnected(true);
+        
+        // 2. Fetch whatever emails we have in the database
+        const { data: dbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
+        if (dbEmails) {
+          setEmails(dbEmails);
+          const uniqueAccounts = Array.from(new Set(dbEmails.map(e => e.account_email)));
+          setAccounts(uniqueAccounts as string[]);
+        }
+      }
+    } catch (e) {
+      console.error("Sync Error:", e);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }
 
-  async function syncGmail() {
+  async function manualSync() {
     setIsSyncing(true);
     try {
       const res = await fetch(`/api/google-workspace?orgId=${orgId}`);
       const data = await res.json();
       if (data.connected) {
-        setIsGoogleConnected(true);
-        if (data.synced > 0) fetchDatabaseEmails(); 
+        const { data: dbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
+        if (dbEmails) {
+          setEmails(dbEmails);
+          const uniqueAccounts = Array.from(new Set(dbEmails.map(e => e.account_email)));
+          setAccounts(uniqueAccounts as string[]);
+        }
       }
-    } catch (e) { console.error(e); } finally { setIsSyncing(false); }
+    } catch (e: any) {
+      alert("Sync error: " + e.message);
+    } finally {
+      setIsSyncing(false);
+    }
   }
 
   async function connectNewGoogleAccount() {
@@ -86,10 +107,9 @@ export default function WorkspacePage() {
       <header className="bg-white border-b border-gray-200 px-8 py-4 flex justify-between items-center">
         <h2 className="text-xl font-semibold text-gray-800">Unified Inbox & Workspace</h2>
         
-        {/* FIX: Only show these buttons IF they are already connected */}
         {isGoogleConnected && (
           <div className="flex space-x-3">
-            <button onClick={syncGmail} disabled={isSyncing} className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-md font-medium transition">
+            <button onClick={manualSync} disabled={isSyncing} className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-md font-medium transition">
               {isSyncing ? '🔄 Syncing...' : '🔄 Sync Now'}
             </button>
             <button onClick={connectNewGoogleAccount} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition shadow-sm flex items-center">
@@ -112,6 +132,7 @@ export default function WorkspacePage() {
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[calc(100vh-150px)]">
+            
             <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center rounded-t-xl">
               <div className="flex items-center space-x-4">
                 <h3 className="font-bold text-gray-800 flex items-center"><span className="mr-2">📥</span> Unified Inbox</h3>
@@ -144,7 +165,7 @@ export default function WorkspacePage() {
                   </div>
                 </div>
               ))}
-              {filteredEmails.length === 0 && <p className="p-8 text-center text-gray-500">Inbox Zero! No unread emails.</p>}
+              {filteredEmails.length === 0 && <p className="p-8 text-center text-gray-500">Inbox Zero! No emails found.</p>}
             </div>
           </div>
         )}
