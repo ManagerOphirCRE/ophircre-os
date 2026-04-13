@@ -5,24 +5,27 @@ import { useOrg } from '@/app/context/OrgContext';
 
 export default function WorkspacePage() {
   const { orgId } = useOrg();
-  const [isGoogleConnected, setIsGoogleConnected] = useState(false);
-  const[isSyncing, setIsSyncing] = useState(false);
+  const[isGoogleConnected, setIsGoogleConnected] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
   const [emails, setEmails] = useState<any[]>([]);
-  const[accounts, setAccounts] = useState<string[]>([]);
+  const [accounts, setAccounts] = useState<string[]>([]);
   const [selectedAccount, setSelectedAccount] = useState('ALL');
   
   const [properties, setProperties] = useState<any[]>([]);
-  const[taskModalEmail, setTaskModalEmail] = useState<any>(null);
+  const [taskModalEmail, setTaskModalEmail] = useState<any>(null);
   const [selectedPropertyId, setSelectedPropertyId] = useState('');
+
+  // NEW: Error State to catch Google's complaints
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     if (orgId) {
       fetchProperties();
       checkConnectionAndSync();
     }
-  },[orgId]);
+  }, [orgId]);
 
   async function fetchProperties() {
     const { data } = await supabase.from('properties').select('*').order('name');
@@ -31,24 +34,36 @@ export default function WorkspacePage() {
 
   async function checkConnectionAndSync() {
     setIsLoading(true);
+    setSyncError(null);
     try {
-      // 1. Check if the API says we are connected (bypasses the 0 emails bug)
-      const res = await fetch(`/api/google-workspace?orgId=${orgId}`);
-      const data = await res.json();
+      // 1. Check if we have tokens in the database first
+      const { data: tokens } = await supabase.from('google_tokens').select('*').eq('organization_id', orgId);
       
-      if (data.connected) {
+      if (tokens && tokens.length > 0) {
         setIsGoogleConnected(true);
         
-        // 2. Fetch whatever emails we have in the database
+        // 2. Fetch existing emails from database so the UI isn't empty
         const { data: dbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
         if (dbEmails) {
           setEmails(dbEmails);
           const uniqueAccounts = Array.from(new Set(dbEmails.map(e => e.account_email)));
           setAccounts(uniqueAccounts as string[]);
         }
+
+        // 3. Ping the API to sync NEW emails
+        const res = await fetch(`/api/google-workspace?orgId=${orgId}`);
+        const data = await res.json();
+        
+        if (data.error) {
+          setSyncError(data.error); // Catch the Google Error!
+        } else if (data.synced > 0) {
+          // Refresh if new emails were found
+          const { data: newDbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
+          if (newDbEmails) setEmails(newDbEmails);
+        }
       }
-    } catch (e) {
-      console.error("Sync Error:", e);
+    } catch (e: any) {
+      setSyncError(e.message);
     } finally {
       setIsLoading(false);
     }
@@ -56,19 +71,20 @@ export default function WorkspacePage() {
 
   async function manualSync() {
     setIsSyncing(true);
+    setSyncError(null);
     try {
       const res = await fetch(`/api/google-workspace?orgId=${orgId}`);
       const data = await res.json();
-      if (data.connected) {
+      
+      if (data.error) {
+        setSyncError(data.error);
+      } else {
+        alert(`Sync complete! Found ${data.synced || 0} new emails.`);
         const { data: dbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
-        if (dbEmails) {
-          setEmails(dbEmails);
-          const uniqueAccounts = Array.from(new Set(dbEmails.map(e => e.account_email)));
-          setAccounts(uniqueAccounts as string[]);
-        }
+        if (dbEmails) setEmails(dbEmails);
       }
     } catch (e: any) {
-      alert("Sync error: " + e.message);
+      setSyncError(e.message);
     } finally {
       setIsSyncing(false);
     }
@@ -79,7 +95,8 @@ export default function WorkspacePage() {
       const res = await fetch(`/api/google-auth?state=${orgId}`);
       const data = await res.json();
       if (data.url) window.location.href = data.url;
-    } catch (error: any) { alert("Error connecting: " + error.message); }
+      else setSyncError("Failed to generate Google Login URL. Check your GOOGLE_CLIENT_ID in Vercel.");
+    } catch (error: any) { setSyncError("Error connecting: " + error.message); }
   }
 
   async function convertToTask(e: any) {
@@ -121,6 +138,16 @@ export default function WorkspacePage() {
       </header>
 
       <main className="flex-1 overflow-y-auto p-8 bg-gray-100">
+        
+        {/* DIAGNOSTIC ERROR BOX */}
+        {syncError && (
+          <div className="mb-8 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm">
+            <h3 className="text-red-800 font-bold">Google API Error Detected:</h3>
+            <p className="text-red-600 font-mono text-sm mt-1">{syncError}</p>
+            <p className="text-sm text-gray-600 mt-2">If this says "Gmail API has not been used", you need to go to console.cloud.google.com and click "Enable" for the Gmail API!</p>
+          </div>
+        )}
+
         {!isGoogleConnected ? (
           <div className="bg-white p-12 rounded-xl shadow-sm border border-gray-200 text-center max-w-2xl mx-auto mt-10">
             <div className="text-5xl mb-4">📧</div>
@@ -165,7 +192,7 @@ export default function WorkspacePage() {
                   </div>
                 </div>
               ))}
-              {filteredEmails.length === 0 && <p className="p-8 text-center text-gray-500">Inbox Zero! No emails found.</p>}
+              {filteredEmails.length === 0 && <p className="p-8 text-center text-gray-500">Inbox Zero! No emails found in the database.</p>}
             </div>
           </div>
         )}
