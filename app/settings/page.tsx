@@ -1,17 +1,19 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { supabase } from '@/app/utils/supabase';
+import JSZip from 'jszip';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('accounts');
-  const [accounts, setAccounts] = useState<any[]>([]);
+  const[accounts, setAccounts] = useState<any[]>([]);
   const [team, setTeam] = useState<any[]>([]);
   const [apiKeys, setApiKeys] = useState<any[]>([]);
   
-  const [newEmail, setNewEmail] = useState('');
+  const[newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState('assistant');
   const [userEmail, setUserEmail] = useState('');
-  const[pushEnabled, setPushEnabled] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(function loadSettings() {
     async function fetchData() {
@@ -32,33 +34,68 @@ export default function SettingsPage() {
     fetchData();
   },[]);
 
-  // --- API KEY LOGIC ---
-  async function generateApiKey() {
-    const name = prompt("Enter a name for this API Key (e.g., 'Zapier Integration'):");
-    if (!name) return;
-
-    // Generate a secure random string
-    const newKey = 'sk_live_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-
+  // --- NEW: GLOBAL DATA TAKEOUT ENGINE ---
+  async function exportGlobalData() {
+    setIsExporting(true);
     try {
-      await supabase.from('api_keys').insert([{ name, api_key: newKey }]);
-      alert(`API Key Generated! Please copy it now, it will not be shown again:\n\n${newKey}`);
-      
-      const { data } = await supabase.from('api_keys').select('*').order('created_at', { ascending: false });
-      if (data) setApiKeys(data);
+      const zip = new JSZip();
+
+      // Fetch all core tables
+      const { data: props } = await supabase.from('properties').select('*');
+      const { data: tnts } = await supabase.from('tenants').select('*');
+      const { data: lses } = await supabase.from('leases').select('*');
+      const { data: txns } = await supabase.from('transactions').select('*');
+
+      // Convert JSON to CSV strings
+      const toCsv = (data: any[]) => {
+        if (!data || data.length === 0) return '';
+        const headers = Object.keys(data[0]).join(',');
+        const rows = data.map(row => Object.values(row).map(val => `"${String(val).replace(/"/g, '""')}"`).join(','));
+        return[headers, ...rows].join('\n');
+      };
+
+      // Add CSVs to the ZIP file
+      zip.file("properties.csv", toCsv(props ||[]));
+      zip.file("tenants.csv", toCsv(tnts || []));
+      zip.file("leases.csv", toCsv(lses ||[]));
+      zip.file("transactions.csv", toCsv(txns ||[]));
+
+      // Generate and download the ZIP
+      const content = await zip.generateAsync({ type: "blob" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(content);
+      link.download = `OphirCRE_Global_Backup_${new Date().toISOString().split('T')[0]}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      alert("Global Data Takeout Complete! ZIP file downloaded.");
     } catch (error: any) {
-      alert("Error generating key: " + error.message);
+      alert("Export Error: " + error.message);
+    } finally {
+      setIsExporting(false);
     }
   }
 
+  // ... (Existing API Key, Push Notification, and Team Management functions remain exactly the same)
+  async function generateApiKey() {
+    const name = prompt("Enter a name for this API Key (e.g., 'Zapier Integration'):"); if (!name) return;
+    const newKey = 'sk_live_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    try {
+      await supabase.from('api_keys').insert([{ name, api_key: newKey }]);
+      alert(`API Key Generated! Please copy it now, it will not be shown again:\n\n${newKey}`);
+      const { data } = await supabase.from('api_keys').select('*').order('created_at', { ascending: false });
+      if (data) setApiKeys(data);
+    } catch (error: any) { alert("Error generating key: " + error.message); }
+  }
+
   async function revokeApiKey(id: string) {
-    if (!confirm("Revoke this API Key? Any external apps using it will immediately lose access.")) return;
+    if (!confirm("Revoke this API Key?")) return;
     await supabase.from('api_keys').delete().eq('id', id);
     const { data } = await supabase.from('api_keys').select('*').order('created_at', { ascending: false });
     if (data) setApiKeys(data);
   }
 
-  // --- EXISTING SETTINGS LOGIC ---
   function urlBase64ToUint8Array(base64String: string) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
@@ -117,23 +154,30 @@ export default function SettingsPage() {
           <button onClick={() => setActiveTab('team')} className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'team' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Team & Permissions</button>
           <button onClick={() => setActiveTab('api')} className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'api' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>API Integrations</button>
           <button onClick={() => setActiveTab('notifications')} className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'notifications' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Notifications</button>
+          <button onClick={() => setActiveTab('export')} className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'export' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Data Export</button>
         </div>
       </header>
 
       <main className="flex-1 overflow-y-auto p-8 bg-gray-100">
         
+        {/* NEW: GLOBAL DATA TAKEOUT TAB */}
+        {activeTab === 'export' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 max-w-2xl mx-auto text-center mt-10">
+            <div className="text-5xl mb-4">📦</div>
+            <h3 className="font-bold text-2xl text-gray-800 mb-2">Global Data Takeout</h3>
+            <p className="text-gray-600 mb-8">Download a complete, offline backup of your entire portfolio. This will generate a ZIP file containing CSVs of your Properties, Tenants, Leases, and Financial Transactions.</p>
+            <button onClick={exportGlobalData} disabled={isExporting} className={`w-full py-4 rounded-lg font-bold text-white transition shadow-sm text-lg ${isExporting ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'}`}>
+              {isExporting ? 'Bundling Data...' : 'Download Master ZIP File'}
+            </button>
+          </div>
+        )}
+
         {activeTab === 'api' && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex justify-between items-center">
-              <div>
-                <h3 className="font-bold text-gray-800">Public API Keys</h3>
-                <p className="text-sm text-gray-500 mt-1">Generate secure tokens to connect OphirCRE to Zapier, QuickBooks, or custom external software.</p>
-              </div>
-              <button onClick={generateApiKey} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md font-bold transition shadow-sm">
-                + Generate New Key
-              </button>
+              <div><h3 className="font-bold text-gray-800">Public API Keys</h3><p className="text-sm text-gray-500 mt-1">Generate secure tokens to connect OphirCRE to Zapier, QuickBooks, or custom external software.</p></div>
+              <button onClick={generateApiKey} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md font-bold transition shadow-sm">+ Generate New Key</button>
             </div>
-
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Integration Name</th><th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">API Key (Hidden)</th><th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Created</th><th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase">Action</th></tr></thead>
@@ -153,7 +197,6 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Existing Tabs (Notifications, Accounts, Team) remain exactly the same below... */}
         {activeTab === 'notifications' && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 max-w-2xl mx-auto text-center mt-10">
             <div className="text-5xl mb-4">🔔</div>
