@@ -11,14 +11,18 @@ export default function TenantProfilePage() {
   const[invoices, setInvoices] = useState<any[]>([]); const [comms, setComps] = useState<any[]>([]); const [tasks, setTasks] = useState<any[]>([]);
 
   const[coiDate, setCoiDate] = useState(''); const [baseRent, setBaseRent] = useState(0);
-  const [camCharge, setCamCharge] = useState(0); const [taxCharge, setTaxCharge] = useState(0); const [insCharge, setInsCharge] = useState(0);
+  const[camCharge, setCamCharge] = useState(0); const [taxCharge, setTaxCharge] = useState(0); const[insCharge, setInsCharge] = useState(0);
   const [escalationDate, setEscalationDate] = useState(''); const[escalationType, setEscalationType] = useState('percentage');
   const[escalationPct, setEscalationPct] = useState(0); const [escalationFixed, setEscalationFixed] = useState(0);
 
-  const [isEscalationModalOpen, setIsEscalationModalOpen] = useState(false);
+  // NEW: Late Fee State
+  const [gracePeriod, setGracePeriod] = useState(5);
+  const [lateFeeType, setLateFeeType] = useState('percentage');
+  const [lateFeeAmount, setLateFeeAmount] = useState(5.0);
+
+  const[isEscalationModalOpen, setIsEscalationModalOpen] = useState(false);
   const [suggestedNewRent, setSuggestedNewRent] = useState('');
   const[escalationEmailBody, setEscalationEmailBody] = useState('');
-
   const [leaseQuestion, setLeaseQuestion] = useState('');
   const [leaseAnswer, setLeaseAnswer] = useState('');
   const [isAsking, setIsAsking] = useState(false);
@@ -34,6 +38,7 @@ export default function TenantProfilePage() {
         setTaxCharge(lData.tax_charge || 0); setInsCharge(lData.insurance_charge || 0);
         setEscalationDate(lData.next_escalation_date || ''); setEscalationType(lData.escalation_type || 'percentage');
         setEscalationPct(lData.escalation_percentage || 0); setEscalationFixed(lData.escalation_fixed_amount || 0);
+        setGracePeriod(lData.grace_period_days || 5); setLateFeeType(lData.late_fee_type || 'percentage'); setLateFeeAmount(lData.late_fee_amount || 5.0);
       }
       const { data: iData } = await supabase.from('tenant_invoices').select('*').eq('tenant_id', tenantId).order('due_date', { ascending: false });
       if (iData) setInvoices(iData);
@@ -43,7 +48,7 @@ export default function TenantProfilePage() {
       if (tkData) setTasks(tkData);
     }
     fetchTenantData();
-  },[tenantId]);
+  }, [tenantId]);
 
   async function saveProfile() {
     setIsSaving(true);
@@ -54,51 +59,39 @@ export default function TenantProfilePage() {
           base_rent_amount: baseRent, cam_charge: camCharge, tax_charge: taxCharge, insurance_charge: insCharge,
           next_escalation_date: escalationDate || null, escalation_type: escalationType,
           escalation_percentage: escalationType === 'percentage' ? escalationPct : 0,
-          escalation_fixed_amount: escalationType === 'fixed' ? escalationFixed : 0
+          escalation_fixed_amount: escalationType === 'fixed' ? escalationFixed : 0,
+          grace_period_days: gracePeriod, late_fee_type: lateFeeType, late_fee_amount: lateFeeAmount
         }).eq('id', lease.id);
       }
       alert("Profile and Financials Updated!");
     } catch (error: any) { alert("Error: " + error.message); } finally { setIsSaving(false); }
   }
 
-  // NEW: 1-Click Tenant Onboarding Engine
   async function onboardTenant() {
     if (!confirm("Generate Move-In Invoices and send Welcome Packet?")) return;
     setIsOnboarding(true);
     try {
       const totalMonthly = Number(baseRent) + Number(camCharge) + Number(taxCharge) + Number(insCharge);
       if (totalMonthly <= 0) throw new Error("Please save the Lease Financials first.");
-
-      const today = new Date();
-      const startDate = new Date(lease.start_date);
-      
-      // Calculate Prorated Rent (Days remaining in month / Total days in month)
+      const today = new Date(); const startDate = new Date(lease.start_date);
       const daysInMonth = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0).getDate();
       const daysActive = daysInMonth - startDate.getDate() + 1;
-      const prorationFactor = daysActive / daysInMonth;
-      const proratedRent = totalMonthly * prorationFactor;
+      const proratedRent = totalMonthly * (daysActive / daysInMonth);
+      const depositAmount = Number(lease.security_deposit || totalMonthly);
 
-      const depositAmount = Number(lease.security_deposit || totalMonthly); // Default to 1 month if not set
-
-      // 1. Create Invoices
       const newInvoices =[
         { tenant_id: tenant.id, lease_id: lease.id, amount: depositAmount, description: 'Security Deposit', due_date: today.toISOString().split('T')[0], status: 'Unpaid' },
         { tenant_id: tenant.id, lease_id: lease.id, amount: proratedRent, description: `Prorated First Month Rent (${daysActive} days)`, due_date: today.toISOString().split('T')[0], status: 'Unpaid' }
       ];
       await supabase.from('tenant_invoices').insert(newInvoices);
-
-      // 2. Mark as Onboarded
       await supabase.from('leases').update({ is_onboarded: true, security_deposit: depositAmount }).eq('id', lease.id);
 
-      // 3. Send Welcome Email
       if (tenant.contact_email) {
-        const welcomeText = `Welcome to ${lease.spaces?.properties?.name}!\n\nWe are thrilled to have you.\n\nYour Move-In invoices have been generated:\n- Security Deposit: $${depositAmount.toFixed(2)}\n- Prorated First Month: $${proratedRent.toFixed(2)}\n\nPlease log into your secure Tenant Portal to submit payment and set up your account:\nhttps://app.ophircre.com/portal-login\n\nWelcome home,\nOphirCRE Management`;
+        const welcomeText = `Welcome to ${lease.spaces?.properties?.name}!\n\nYour Move-In invoices have been generated:\n- Security Deposit: $${depositAmount.toFixed(2)}\n- Prorated First Month: $${proratedRent.toFixed(2)}\n\nPlease log into your secure Tenant Portal to submit payment: https://app.ophircre.com/portal-login`;
         await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: tenant.contact_email, subject: "Welcome to OphirCRE! (Action Required)", text: welcomeText }) });
         await supabase.from('communications').insert([{ tenant_id: tenant.id, subject: 'Welcome Packet & Move-In Invoices', body: welcomeText, type: 'Email', status: 'Sent' }]);
       }
-
-      alert("Tenant successfully onboarded! Invoices generated and Welcome Packet sent.");
-      window.location.reload();
+      alert("Tenant successfully onboarded!"); window.location.reload();
     } catch (error: any) { alert("Onboarding Error: " + error.message); } finally { setIsOnboarding(false); }
   }
 
@@ -107,7 +100,7 @@ export default function TenantProfilePage() {
     if (escalationType === 'percentage') newRent = currentRent + (currentRent * (Number(escalationPct) / 100));
     else if (escalationType === 'fixed') newRent = Number(escalationFixed);
     setSuggestedNewRent(newRent.toFixed(2));
-    setEscalationEmailBody(`Hello ${tenant?.name},\n\nThis is an official notice regarding your lease at ${lease?.spaces?.properties?.name}.\n\nPer the terms of your agreement, your monthly Base Rent is scheduled to escalate on ${escalationDate}.\n\nYour new Base Rent amount will be $${newRent.toFixed(2)}.\n\nThis new amount will be reflected on your next invoice. You can view your ledger at any time in your secure portal: https://app.ophircre.com/portal-login\n\nThank you,\nOphirCRE Management`);
+    setEscalationEmailBody(`Hello ${tenant?.name},\n\nPer the terms of your agreement, your monthly Base Rent is scheduled to escalate on ${escalationDate}.\n\nYour new Base Rent amount will be $${newRent.toFixed(2)}.\n\nThank you,\nOphirCRE Management`);
     setIsEscalationModalOpen(true);
   }
 
@@ -126,8 +119,7 @@ export default function TenantProfilePage() {
   }
 
   async function askLeaseQuestion(e: any) {
-    e.preventDefault();
-    if (!leaseQuestion || !lease?.id) return;
+    e.preventDefault(); if (!leaseQuestion || !lease?.id) return;
     setIsAsking(true); setLeaseAnswer('');
     try {
       const res = await fetch('/api/chat-lease', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ leaseId: lease.id, question: leaseQuestion }) });
@@ -152,16 +144,10 @@ export default function TenantProfilePage() {
       </header>
 
       <main className="flex-1 overflow-y-auto p-8 bg-gray-100 relative">
-        {/* ONBOARDING BANNER */}
         {lease && !lease.is_onboarded && lease.status === 'Active' && (
           <div className="mb-6 bg-green-600 rounded-xl p-6 text-white shadow-md flex justify-between items-center">
-            <div>
-              <h3 className="text-xl font-bold mb-1">New Tenant Ready for Onboarding</h3>
-              <p className="text-green-100 text-sm">Generate their prorated first month's rent, security deposit, and send the Welcome Packet.</p>
-            </div>
-            <button onClick={onboardTenant} disabled={isOnboarding} className="bg-white text-green-700 px-6 py-3 rounded-lg font-bold shadow-sm hover:bg-gray-50 transition">
-              {isOnboarding ? 'Onboarding...' : '🚀 1-Click Onboard Tenant'}
-            </button>
+            <div><h3 className="text-xl font-bold mb-1">New Tenant Ready for Onboarding</h3><p className="text-green-100 text-sm">Generate prorated rent, security deposit, and send Welcome Packet.</p></div>
+            <button onClick={onboardTenant} disabled={isOnboarding} className="bg-white text-green-700 px-6 py-3 rounded-lg font-bold shadow-sm hover:bg-gray-50 transition">{isOnboarding ? 'Onboarding...' : '🚀 1-Click Onboard Tenant'}</button>
           </div>
         )}
 
@@ -179,10 +165,7 @@ export default function TenantProfilePage() {
                   <div className="space-y-3 text-sm"><p><span className="text-gray-500 block">Property:</span> <span className="font-bold text-blue-600">{lease.spaces?.properties?.name}</span></p><p><span className="text-gray-500 block">Space:</span> <span className="font-medium">{lease.spaces?.name}</span></p><p><span className="text-gray-500 block">Term:</span> <span className="font-medium">{lease.start_date} to {lease.end_date}</span></p></div>
                   <div className="mt-6 pt-4 border-t border-gray-200">
                     <h4 className="font-bold text-purple-800 mb-2 flex items-center"><span className="mr-2">🤖</span> AI Lease Assistant</h4>
-                    <form onSubmit={askLeaseQuestion} className="flex space-x-2">
-                      <input type="text" placeholder="e.g., Who pays for HVAC?" className="flex-1 border p-2 rounded text-sm outline-none focus:ring-2 focus:ring-purple-500" value={leaseQuestion} onChange={(e) => setLeaseQuestion(e.target.value)} />
-                      <button type="submit" disabled={isAsking} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded font-bold text-sm transition">{isAsking ? '...' : 'Ask'}</button>
-                    </form>
+                    <form onSubmit={askLeaseQuestion} className="flex space-x-2"><input type="text" placeholder="e.g., Who pays for HVAC?" className="flex-1 border p-2 rounded text-sm outline-none focus:ring-2 focus:ring-purple-500" value={leaseQuestion} onChange={(e) => setLeaseQuestion(e.target.value)} /><button type="submit" disabled={isAsking} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded font-bold text-sm transition">{isAsking ? '...' : 'Ask'}</button></form>
                     {leaseAnswer && <div className="mt-3 p-3 bg-purple-50 rounded border border-purple-100 text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{leaseAnswer}</div>}
                   </div>
                 </div>
@@ -190,7 +173,7 @@ export default function TenantProfilePage() {
             </div>
 
             <div className="w-full md:w-2/3 bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-fit">
-              <h3 className="font-bold text-gray-800 border-b pb-2 mb-4">Lease Financials & Escalations</h3>
+              <h3 className="font-bold text-gray-800 border-b pb-2 mb-4">Lease Financials & Rules</h3>
               {lease ? (
                 <div className="space-y-6 max-w-md">
                   <div className="space-y-3">
@@ -200,6 +183,15 @@ export default function TenantProfilePage() {
                     <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Tax Escrow</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right" value={taxCharge} onChange={(e) => setTaxCharge(Number(e.target.value))} /></div></div>
                     <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Insurance Escrow</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right" value={insCharge} onChange={(e) => setInsCharge(Number(e.target.value))} /></div></div>
                   </div>
+                  
+                  {/* NEW: Custom Late Fee Rules */}
+                  <div className="space-y-3 pt-4 border-t">
+                    <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Late Fee Policy</h4>
+                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Grace Period (Days)</label><input type="number" className="border p-2 rounded w-40 outline-none" value={gracePeriod} onChange={(e) => setGracePeriod(Number(e.target.value))} /></div>
+                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Fee Type</label><select className="border p-2 rounded w-40 outline-none text-sm" value={lateFeeType} onChange={(e) => setLateFeeType(e.target.value)}><option value="percentage">Percentage (%)</option><option value="fixed">Fixed Amount ($)</option></select></div>
+                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Penalty Amount</label><input type="number" step="0.1" className="border p-2 rounded w-40 text-right outline-none" value={lateFeeAmount} onChange={(e) => setLateFeeAmount(Number(e.target.value))} /></div>
+                  </div>
+
                   <div className="space-y-3 pt-4 border-t">
                     <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Rent Escalation Rules</h4>
                     <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Next Bump Date</label><input type="date" className="border p-2 rounded w-40 outline-none" value={escalationDate} onChange={(e) => setEscalationDate(e.target.value)} /></div>
@@ -231,10 +223,9 @@ export default function TenantProfilePage() {
                     <td className="px-6 py-4 text-sm text-gray-500">{inv.due_date}</td>
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">{inv.description}</td>
                     <td className="px-6 py-4 text-sm font-bold text-gray-900">${Number(inv.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td className="px-6 py-4 text-sm"><span className={`px-2 py-1 rounded-full text-xs font-bold ${inv.status === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{inv.status}</span></td>
+                    <td className="px-6 py-4 text-sm"><span className={`px-2 py-1 rounded-full text-xs font-bold ${inv.status === 'Paid' ? 'bg-green-100 text-green-800' : inv.status === 'Overdue' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{inv.status}</span></td>
                   </tr>
                 ))}
-                {invoices.length === 0 && <tr><td colSpan={4} className="px-6 py-8 text-center text-gray-500">No invoices on file.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -281,27 +272,19 @@ export default function TenantProfilePage() {
           <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl">
               <h3 className="text-xl font-bold mb-2 text-gray-800">Review Rent Escalation</h3>
-              <p className="text-sm text-gray-500 mb-6">The system has calculated the new rent based on the lease rules. You can amend the final amount or the notice email below before sending.</p>
-              
               <div className="space-y-4">
                 <div className="bg-orange-50 p-4 rounded-lg border border-orange-200 flex justify-between items-center">
                   <span className="font-bold text-orange-800">Calculated New Base Rent:</span>
                   <div className="relative">
                     <span className="absolute left-3 top-2 text-gray-500 font-bold">$</span>
-                    <input type="number" className="border-2 border-orange-300 p-2 pl-6 rounded w-32 text-right font-black text-orange-900 outline-none focus:ring-2 focus:ring-orange-500 bg-white" value={suggestedNewRent} onChange={(e) => setSuggestedNewRent(e.target.value)} />
+                    <input type="number" className="border-2 border-orange-300 p-2 pl-6 rounded w-32 text-right font-black text-orange-900 outline-none" value={suggestedNewRent} onChange={(e) => setSuggestedNewRent(e.target.value)} />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">Notice Email to Tenant</label>
-                  <textarea className="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 h-48 resize-none text-sm font-serif" value={escalationEmailBody} onChange={(e) => setEscalationEmailBody(e.target.value)} />
-                </div>
+                <div><label className="block text-sm font-bold text-gray-700 mb-1">Notice Email to Tenant</label><textarea className="w-full border p-3 rounded-lg outline-none h-48 resize-none text-sm font-serif" value={escalationEmailBody} onChange={(e) => setEscalationEmailBody(e.target.value)} /></div>
               </div>
-
               <div className="flex justify-end space-x-3 pt-6 mt-4 border-t">
                 <button onClick={() => setIsEscalationModalOpen(false)} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded font-medium">Cancel</button>
-                <button onClick={executeEscalation} disabled={isExecuting} className={`px-6 py-2 rounded font-bold text-white transition shadow-sm ${isExecuting ? 'bg-green-400' : 'bg-green-600 hover:bg-green-700'}`}>
-                  {isExecuting ? 'Executing...' : 'Confirm & Send Notice'}
-                </button>
+                <button onClick={executeEscalation} disabled={isExecuting} className={`px-6 py-2 rounded font-bold text-white transition shadow-sm ${isExecuting ? 'bg-green-400' : 'bg-green-600 hover:bg-green-700'}`}>Confirm & Send Notice</button>
               </div>
             </div>
           </div>

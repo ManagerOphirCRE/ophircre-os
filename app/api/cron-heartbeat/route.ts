@@ -27,50 +27,12 @@ export async function GET(req: Request) {
       tasksCreated += tasks.length;
     }
 
-    // 2. Execute Rent Escalations happening in exactly 30 days
-    const { data: escalations } = await supabase.from('leases').select('*, tenants(name, contact_email)').eq('next_escalation_date', target30);
-    
+    // 2. Rent Escalations in 30 days (Reminder Only - Human in the loop)
+    const { data: escalations } = await supabase.from('leases').select('*, tenants(name)').eq('next_escalation_date', target30);
     if (escalations && escalations.length > 0) {
-      for (const lease of escalations) {
-        const currentRent = Number(lease.base_rent_amount || 0);
-        let newRent = currentRent;
-
-        // Calculate the new rent based on the rule you set!
-        if (lease.escalation_type === 'percentage') {
-          const pct = Number(lease.escalation_percentage || 0) / 100;
-          newRent = currentRent + (currentRent * pct);
-        } else if (lease.escalation_type === 'fixed') {
-          newRent = Number(lease.escalation_fixed_amount || currentRent);
-        }
-
-        // A. Update the lease in the database
-        await supabase.from('leases').update({
-          base_rent_amount: newRent,
-          next_escalation_date: null // Clear it so it doesn't fire again until you set the next year's date
-        }).eq('id', lease.id);
-
-        // B. Email the Tenant via SendGrid
-        if (lease.tenants?.contact_email) {
-          await fetch('https://app.ophircre.com/api/send-email', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              to: lease.tenants.contact_email,
-              subject: "Official Notice: Upcoming Rent Escalation",
-              text: `Hello ${lease.tenants.name},\n\nThis is an automated courtesy notice regarding your lease.\n\nPer the terms of your agreement, your monthly Base Rent is scheduled to escalate on ${lease.next_escalation_date}.\n\nYour new Base Rent amount will be $${newRent.toFixed(2)}.\n\nThis new amount will be reflected on your next invoice. You can view your ledger at any time in your secure portal: https://app.ophircre.com/portal-login\n\nThank you,\nOphirCRE Management`
-            })
-          });
-        }
-
-        // C. Drop a confirmation task on your board
-        await supabase.from('tasks').insert([{ 
-          title: `EXECUTED: Rent Escalation for ${lease.tenants?.name}`, 
-          description: `Rent was automatically increased from $${currentRent} to $${newRent.toFixed(2)}. The tenant was emailed a notice.`, 
-          status: 'Done', 
-          tenant_id: lease.tenant_id 
-        }]);
-        
-        tasksCreated++;
-      }
+      const tasks = escalations.map(l => ({ title: `ACTION REQUIRED: Rent Escalation for ${l.tenants?.name}`, description: `Rent is scheduled to escalate on ${l.next_escalation_date}. Go to their Tenant Profile to review the math and click 'Execute Escalation'.`, status: 'To Do', tenant_id: l.tenant_id }));
+      await supabase.from('tasks').insert(tasks);
+      tasksCreated += tasks.length;
     }
 
     // 3. Tenant COIs expiring in 30 days
@@ -89,20 +51,58 @@ export async function GET(req: Request) {
       tasksCreated += tasks.length;
     }
 
-    // 5. Overdue Rent & Late Fees
-    const { data: overdueInvoices } = await supabase.from('tenant_invoices').select('*').eq('status', 'Unpaid').lt('due_date', todayStr);
-    if (overdueInvoices && overdueInvoices.length > 0) {
-      const overdueIds = overdueInvoices.map(i => i.id);
-      await supabase.from('tenant_invoices').update({ status: 'Overdue' }).in('id', overdueIds);
-      
-      const lateFeeInvoices = overdueInvoices.map(inv => ({ tenant_id: inv.tenant_id, lease_id: inv.lease_id, amount: Number(inv.amount) * 0.05, description: `Late Fee (5%) for ${inv.description}`, due_date: todayStr, status: 'Unpaid' }));
-      await supabase.from('tenant_invoices').insert(lateFeeInvoices);
+    // 5. Advanced Overdue Rent & Custom Late Fees
+    const { data: unpaidInvoices } = await supabase.from('tenant_invoices').select('*, leases(grace_period_days, late_fee_type, late_fee_amount)').eq('status', 'Unpaid');
+    
+    if (unpaidInvoices && unpaidInvoices.length > 0) {
+      const lateFeeInvoices = [];
+      const overdueIds =[];
+
+      for (const inv of unpaidInvoices) {
+        const dueDate = new Date(inv.due_date);
+        const graceDays = Number(inv.leases?.grace_period_days || 5);
+        
+        // Add grace period to due date
+        const penaltyDate = new Date(dueDate);
+        penaltyDate.setDate(penaltyDate.getDate() + graceDays);
+        
+        // If today is exactly the day AFTER the grace period expires, apply the fee!
+        if (todayStr === penaltyDate.toISOString().split('T')[0]) {
+          overdueIds.push(inv.id);
+          
+          let feeAmount = 0;
+          const feeType = inv.leases?.late_fee_type || 'percentage';
+          const feeValue = Number(inv.leases?.late_fee_amount || 5.0);
+
+          if (feeType === 'percentage') {
+            feeAmount = Number(inv.amount) * (feeValue / 100);
+          } else if (feeType === 'fixed') {
+            feeAmount = feeValue;
+          } else if (feeType === 'daily') {
+            feeAmount = feeValue; // Daily fees would require a more complex loop, we apply the first day here
+          }
+
+          lateFeeInvoices.push({ 
+            tenant_id: inv.tenant_id, 
+            lease_id: inv.lease_id, 
+            amount: feeAmount, 
+            description: `Late Fee for ${inv.description}`, 
+            due_date: todayStr, 
+            status: 'Unpaid' 
+          });
+        }
+      }
+
+      if (overdueIds.length > 0) {
+        await supabase.from('tenant_invoices').update({ status: 'Overdue' }).in('id', overdueIds);
+        await supabase.from('tenant_invoices').insert(lateFeeInvoices);
+        tasksCreated += lateFeeInvoices.length;
+      }
     }
 
     // 6. Low Maintenance Inventory Alerts
     const { data: inventory } = await supabase.from('inventory').select('*, properties(name)');
     if (inventory && inventory.length > 0) {
-      // Filter in JS to easily compare quantity vs reorder_level
       const lowItems = inventory.filter(item => item.quantity <= item.reorder_level);
       if (lowItems.length > 0) {
         const tasks = lowItems.map(item => ({ title: `RESTOCK: ${item.item_name}`, description: `Inventory low at ${item.properties?.name || 'Main Office'}. Only ${item.quantity} remaining (Reorder level: ${item.reorder_level}).`, status: 'To Do' }));
