@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const code = searchParams.get('code');
-    const state = searchParams.get('state'); // This is the orgId coming back from Google!
+    const state = searchParams.get('state'); // This is the orgId we passed!
     
     if (!code) throw new Error("No code provided");
 
@@ -21,14 +21,17 @@ export async function GET(req: Request) {
     const userEmail = profile.data.emailAddress?.toLowerCase();
 
     if (userEmail) {
-      // FIX: Use UPSERT so it overwrites the old, broken token with the correct organization_id
-      await supabase.from('google_tokens').upsert({
+      // 1. Delete any old, broken tokens for this email
+      await supabase.from('google_tokens').delete().eq('user_email', userEmail);
+
+      // 2. Insert the fresh token WITH the organization_id explicitly attached
+      await supabase.from('google_tokens').insert([{
         user_email: userEmail,
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         expiry_date: tokens.expiry_date,
-        organization_id: state || null
-      }, { onConflict: 'user_email' });
+        organization_id: state && state !== 'null' ? state : null
+      }]);
     }
     
     return NextResponse.redirect(`https://app.ophircre.com/workspace?connected=true`);
