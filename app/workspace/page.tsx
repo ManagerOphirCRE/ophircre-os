@@ -9,19 +9,19 @@ export default function WorkspacePage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
-  const[emails, setEmails] = useState<any[]>([]);
-  const [accounts, setAccounts] = useState<string[]>([]);
+  const [emails, setEmails] = useState<any[]>([]);
+  const[accounts, setAccounts] = useState<string[]>([]);
   const [selectedAccount, setSelectedAccount] = useState('ALL');
   
   const [properties, setProperties] = useState<any[]>([]);
-  const[taskModalEmail, setTaskModalEmail] = useState<any>(null);
-  const [selectedPropertyId, setSelectedPropertyId] = useState('');
+  const [taskModalEmail, setTaskModalEmail] = useState<any>(null);
+  const[selectedPropertyId, setSelectedPropertyId] = useState('');
 
   useEffect(() => {
     if (orgId) {
       fetchDatabaseEmails();
       fetchProperties();
-      syncGmail(); // Auto-sync in the background when page loads
+      syncGmail(); 
     }
   }, [orgId]);
 
@@ -35,7 +35,6 @@ export default function WorkspacePage() {
     if (data && data.length > 0) {
       setIsGoogleConnected(true);
       setEmails(data);
-      // Extract unique connected email addresses for the dropdown
       const uniqueAccounts = Array.from(new Set(data.map(e => e.account_email)));
       setAccounts(uniqueAccounts as string[]);
     }
@@ -49,14 +48,13 @@ export default function WorkspacePage() {
       const data = await res.json();
       if (data.connected) {
         setIsGoogleConnected(true);
-        if (data.synced > 0) fetchDatabaseEmails(); // Refresh if new emails were found
+        if (data.synced > 0) fetchDatabaseEmails(); 
       }
     } catch (e) { console.error(e); } finally { setIsSyncing(false); }
   }
 
   async function connectNewGoogleAccount() {
     try {
-      // We pass the orgId in the state parameter so the callback knows where to save the token!
       const res = await fetch(`/api/google-auth?state=${orgId}`);
       const data = await res.json();
       if (data.url) window.location.href = data.url;
@@ -87,17 +85,19 @@ export default function WorkspacePage() {
     <>
       <header className="bg-white border-b border-gray-200 px-8 py-4 flex justify-between items-center">
         <h2 className="text-xl font-semibold text-gray-800">Unified Inbox & Workspace</h2>
-        <div className="flex space-x-3">
-          {isGoogleConnected && (
+        
+        {/* FIX: Only show these buttons IF they are already connected */}
+        {isGoogleConnected && (
+          <div className="flex space-x-3">
             <button onClick={syncGmail} disabled={isSyncing} className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-md font-medium transition">
               {isSyncing ? '🔄 Syncing...' : '🔄 Sync Now'}
             </button>
-          )}
-          <button onClick={connectNewGoogleAccount} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition shadow-sm flex items-center">
-            <span className="mr-2 bg-white text-blue-600 rounded-full w-5 h-5 flex items-center justify-center font-bold text-xs">G</span>
-            + Connect Account
-          </button>
-        </div>
+            <button onClick={connectNewGoogleAccount} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition shadow-sm flex items-center">
+              <span className="mr-2 bg-white text-blue-600 rounded-full w-5 h-5 flex items-center justify-center font-bold text-xs">G</span>
+              + Add Another Account
+            </button>
+          </div>
+        )}
       </header>
 
       <main className="flex-1 overflow-y-auto p-8 bg-gray-100">
@@ -106,12 +106,12 @@ export default function WorkspacePage() {
             <div className="text-5xl mb-4">📧</div>
             <h3 className="text-2xl font-bold text-gray-800 mb-2">Connect Your Inboxes</h3>
             <p className="text-gray-500 mb-6">Link your property-specific Gmail accounts to view them all in one place and instantly convert emails into Maintenance Tasks.</p>
-            <button onClick={connectNewGoogleAccount} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold transition shadow-sm text-lg">Authenticate with Google</button>
+            <button onClick={connectNewGoogleAccount} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold transition shadow-sm text-lg">
+              Authenticate with Google
+            </button>
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[calc(100vh-150px)]">
-            
-            {/* INBOX HEADER & TOGGLE */}
             <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center rounded-t-xl">
               <div className="flex items-center space-x-4">
                 <h3 className="font-bold text-gray-800 flex items-center"><span className="mr-2">📥</span> Unified Inbox</h3>
@@ -123,7 +123,6 @@ export default function WorkspacePage() {
               <span className="text-xs text-gray-500 font-medium">{filteredEmails.length} messages saved</span>
             </div>
 
-            {/* EMAIL LIST */}
             <div className="flex-1 overflow-y-auto">
               {filteredEmails.map((email) => (
                 <div key={email.id} className="p-4 border-b border-gray-100 hover:bg-blue-50 transition flex flex-col group">
@@ -139,19 +138,17 @@ export default function WorkspacePage() {
                       <span className="font-semibold text-gray-800 text-sm mb-1 block">{email.subject}</span>
                       <span className="text-sm text-gray-500 line-clamp-1">{email.snippet}</span>
                     </div>
-                    {/* CONVERT TO TASK BUTTON */}
                     <button onClick={() => setTaskModalEmail(email)} className="opacity-0 group-hover:opacity-100 bg-orange-100 text-orange-700 hover:bg-orange-200 px-3 py-1 rounded text-xs font-bold transition whitespace-nowrap">
                       ⚡ Create Task
                     </button>
                   </div>
                 </div>
               ))}
-              {filteredEmails.length === 0 && <p className="p-8 text-center text-gray-500">No emails found for this account.</p>}
+              {filteredEmails.length === 0 && <p className="p-8 text-center text-gray-500">Inbox Zero! No unread emails.</p>}
             </div>
           </div>
         )}
 
-        {/* CREATE TASK MODAL */}
         {taskModalEmail && (
           <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">

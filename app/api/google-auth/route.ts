@@ -3,14 +3,15 @@ import { google } from 'googleapis';
 
 export async function GET(req: Request) {
   try {
-    // This sets up the secure connection to Google
+    const { searchParams } = new URL(req.url);
+    const state = searchParams.get('state'); // Grab the orgId from the URL
+
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      `https://app.ophircre.com/api/google-callback` // Where Google sends you after logging in
+      `https://app.ophircre.com/api/google-callback`
     );
 
-    // We ask Google for permission to read emails, send emails, and manage tasks
     const scopes =[
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/gmail.send',
@@ -20,7 +21,8 @@ export async function GET(req: Request) {
     const url = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: scopes,
-      prompt: 'consent'
+      prompt: 'consent',
+      state: state || '' // FIX: Pass the orgId to Google so it comes back!
     });
 
     return NextResponse.json({ url });
