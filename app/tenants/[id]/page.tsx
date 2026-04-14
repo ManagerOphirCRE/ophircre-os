@@ -5,31 +5,31 @@ import { useParams } from 'next/navigation';
 
 export default function TenantProfilePage() {
   const params = useParams(); 
-  const tenantId = params.id;
+  const tenantId = params.id as string;
 
   const [tenant, setTenant] = useState<any>(null); 
-  const[lease, setLease] = useState<any>(null);
+  const [lease, setLease] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false); 
   const [isExecuting, setIsExecuting] = useState(false);
   const [activeTab, setActiveTab] = useState('lease');
   
   const [invoices, setInvoices] = useState<any[]>([]); 
   const [comms, setComps] = useState<any[]>([]); 
-  const[tasks, setTasks] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
 
   const [coiDate, setCoiDate] = useState(''); 
-  const[baseRent, setBaseRent] = useState(0);
-  const [camCharge, setCamCharge] = useState(0); 
+  const [baseRent, setBaseRent] = useState(0);
+  const[camCharge, setCamCharge] = useState(0); 
   const [taxCharge, setTaxCharge] = useState(0); 
-  const[insCharge, setInsCharge] = useState(0);
+  const [insCharge, setInsCharge] = useState(0);
   
-  const [escalationDate, setEscalationDate] = useState(''); 
+  const[escalationDate, setEscalationDate] = useState(''); 
   const[escalationType, setEscalationType] = useState('percentage');
-  const[escalationPct, setEscalationPct] = useState(0); 
-  const[escalationFixed, setEscalationFixed] = useState(0);
+  const [escalationPct, setEscalationPct] = useState(0); 
+  const [escalationFixed, setEscalationFixed] = useState(0);
 
-  const [gracePeriod, setGracePeriod] = useState(5);
-  const[lateFeeType, setLateFeeType] = useState('percentage');
+  const[gracePeriod, setGracePeriod] = useState(5);
+  const [lateFeeType, setLateFeeType] = useState('percentage');
   const [lateFeeAmount, setLateFeeAmount] = useState(5.0);
 
   const [isEscalationModalOpen, setIsEscalationModalOpen] = useState(false);
@@ -37,34 +37,47 @@ export default function TenantProfilePage() {
   const[escalationEmailBody, setEscalationEmailBody] = useState('');
 
   const [leaseQuestion, setLeaseQuestion] = useState('');
-  const[leaseAnswer, setLeaseAnswer] = useState('');
-  const [isAsking, setIsAsking] = useState(false);
-  const[isOnboarding, setIsOnboarding] = useState(false);
+  const [leaseAnswer, setLeaseAnswer] = useState('');
+  const[isAsking, setIsAsking] = useState(false);
+  const [isOnboarding, setIsOnboarding] = useState(false);
 
-  // NEW: Robust Loading and Error States
-  const[isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState('');
 
   useEffect(() => {
+    let isMounted = true;
+
     async function fetchTenantData() {
       if (!tenantId) return;
-      setIsLoading(true);
-      setFetchError('');
-
+      
       try {
-        // 1. Fetch Tenant
-        const { data: tData, error: tErr } = await supabase.from('tenants').select('*').eq('id', tenantId).single();
+        // 1. Fetch Tenant First
+        const { data: tData, error: tErr } = await supabase
+          .from('tenants')
+          .select('*')
+          .eq('id', tenantId)
+          .single();
+          
         if (tErr) throw new Error(`Tenant Error: ${tErr.message}`);
-        if (tData) { 
+        if (!tData) throw new Error("Tenant not found in database.");
+        
+        if (isMounted) {
           setTenant(tData); 
           setCoiDate(tData.coi_expiration || ''); 
         }
 
-        // 2. Fetch Lease (Using maybeSingle so it doesn't crash if they don't have a lease yet!)
-        const { data: lData, error: lErr } = await supabase.from('leases').select('*, spaces(name, properties(name))').eq('tenant_id', tenantId).maybeSingle();
-        if (lErr) throw new Error(`Lease Error: ${lErr.message}`);
+        // 2. Fetch Lease Separately
+        const { data: lData, error: lErr } = await supabase
+          .from('leases')
+          .select('*, spaces(name, properties(name))')
+          .eq('tenant_id', tenantId)
+          .maybeSingle(); // Use maybeSingle because they might not have a lease!
+          
+        if (lErr && lErr.code !== 'PGRST116') {
+          console.error("Lease fetch error:", lErr);
+        }
         
-        if (lData) {
+        if (lData && isMounted) {
           setLease(lData); 
           setBaseRent(lData.base_rent_amount || 0); 
           setCamCharge(lData.cam_charge || 0);
@@ -79,23 +92,33 @@ export default function TenantProfilePage() {
           setLateFeeAmount(lData.late_fee_amount || 5.0);
         }
 
-        // 3. Fetch 360 Data
-        const { data: iData } = await supabase.from('tenant_invoices').select('*').eq('tenant_id', tenantId).order('due_date', { ascending: false });
-        if (iData) setInvoices(iData);
-        
-        const { data: cData } = await supabase.from('communications').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false });
-        if (cData) setComps(cData);
-        
-        const { data: tkData } = await supabase.from('tasks').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false });
-        if (tkData) setTasks(tkData);
+        // 3. Fetch 360 Data (Run concurrently for speed)
+        const [invRes, commsRes, tasksRes] = await Promise.all([
+          supabase.from('tenant_invoices').select('*').eq('tenant_id', tenantId).order('due_date', { ascending: false }),
+          supabase.from('communications').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }),
+          supabase.from('tasks').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false })
+        ]);
+
+        if (isMounted) {
+          if (invRes.data) setInvoices(invRes.data);
+          if (commsRes.data) setComps(commsRes.data);
+          if (tasksRes.data) setTasks(tasksRes.data);
+          setIsLoading(false);
+        }
 
       } catch (error: any) {
-        setFetchError(error.message);
-      } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setFetchError(error.message);
+          setIsLoading(false);
+        }
       }
     }
+    
     fetchTenantData();
+    
+    return () => {
+      isMounted = false;
+    };
   }, [tenantId]);
 
   async function saveProfile() {
@@ -177,14 +200,12 @@ export default function TenantProfilePage() {
     } catch (error: any) { alert("AI Error: " + error.message); } finally { setIsAsking(false); }
   }
 
-  // --- DIAGNOSTIC RENDERING ---
   if (isLoading) return <div className="p-8 text-gray-500 font-bold">Loading Tenant 360 Profile...</div>;
   
   if (fetchError) return (
     <div className="p-8 m-8 bg-red-50 border-l-4 border-red-600 rounded-r-lg shadow-sm">
       <h3 className="text-red-800 font-bold text-lg">Database Error</h3>
       <p className="text-red-600 font-mono mt-2">{fetchError}</p>
-      <p className="text-sm text-gray-600 mt-4">If this says "JSON object requested, multiple (or no) rows returned", it means the tenant was created before the SaaS firewall was activated, so it is missing an organization_id!</p>
     </div>
   );
 
