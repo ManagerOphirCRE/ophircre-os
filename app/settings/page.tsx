@@ -2,21 +2,23 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/app/utils/supabase';
 import JSZip from 'jszip';
+import { useOrg } from '@/app/context/OrgContext'; // NEW: Import the Org Context
 
 export default function SettingsPage() {
+  const { orgId } = useOrg(); // NEW: Grab your company ID
+  
   const [activeTab, setActiveTab] = useState('accounts');
   const [accounts, setAccounts] = useState<any[]>([]);
   const [team, setTeam] = useState<any[]>([]);
   const [apiKeys, setApiKeys] = useState<any[]>([]);
-  const [org, setOrg] = useState<any>(null);
+  const[org, setOrg] = useState<any>(null);
   
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState('assistant');
   const [userEmail, setUserEmail] = useState('');
-  const[pushEnabled, setPushEnabled] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const[isExporting, setIsExporting] = useState(false);
   
-  // Branding State
   const [primaryColor, setPrimaryColor] = useState('#2563eb');
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
@@ -25,10 +27,8 @@ export default function SettingsPage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.email) {
         setUserEmail(session.user.email);
-        // Fetch Organization for Branding
-        const { data: roleData } = await supabase.from('user_roles').select('organization_id').eq('email', session.user.email).single();
-        if (roleData?.organization_id) {
-          const { data: orgData } = await supabase.from('organizations').select('*').eq('id', roleData.organization_id).single();
+        if (orgId) {
+          const { data: orgData } = await supabase.from('organizations').select('*').eq('id', orgId).single();
           if (orgData) {
             setOrg(orgData);
             setPrimaryColor(orgData.primary_color || '#2563eb');
@@ -38,19 +38,22 @@ export default function SettingsPage() {
 
       const { data: accData } = await supabase.from('chart_of_accounts').select('*').order('account_type', { ascending: true });
       if (accData) setAccounts(accData);
+      
       const { data: teamData } = await supabase.from('user_roles').select('*').order('role', { ascending: true });
       if (teamData) setTeam(teamData);
+
       const { data: keyData } = await supabase.from('api_keys').select('*').order('created_at', { ascending: false });
       if (keyData) setApiKeys(keyData);
+
       if ('Notification' in window && Notification.permission === 'granted') setPushEnabled(true);
     }
-    fetchData();
-  },[]);
+    if (orgId) fetchData();
+  }, [orgId]);
 
   async function saveBranding() {
     if (!org) return;
     await supabase.from('organizations').update({ primary_color: primaryColor }).eq('id', org.id);
-    alert("Brand color updated! This will reflect on your Tenant and Vendor portals.");
+    alert("Brand color updated!");
   }
 
   async function uploadLogo(e: any) {
@@ -81,10 +84,10 @@ export default function SettingsPage() {
         if (!data || data.length === 0) return '';
         const headers = Object.keys(data[0]).join(',');
         const rows = data.map(row => Object.values(row).map(val => `"${String(val).replace(/"/g, '""')}"`).join(','));
-        return[headers, ...rows].join('\n');
+        return [headers, ...rows].join('\n');
       };
 
-      zip.file("properties.csv", toCsv(props ||[])); zip.file("tenants.csv", toCsv(tnts ||[]));
+      zip.file("properties.csv", toCsv(props || [])); zip.file("tenants.csv", toCsv(tnts ||[]));
       zip.file("leases.csv", toCsv(lses ||[])); zip.file("transactions.csv", toCsv(txns ||[]));
 
       const content = await zip.generateAsync({ type: "blob" });
@@ -98,7 +101,7 @@ export default function SettingsPage() {
     const name = prompt("Enter a name for this API Key:"); if (!name) return;
     const newKey = 'sk_live_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
     try {
-      await supabase.from('api_keys').insert([{ name, api_key: newKey }]);
+      await supabase.from('api_keys').insert([{ name, api_key: newKey, organization_id: orgId }]);
       alert(`API Key Generated! Copy it now:\n\n${newKey}`);
       const { data } = await supabase.from('api_keys').select('*').order('created_at', { ascending: false });
       if (data) setApiKeys(data);
@@ -122,9 +125,19 @@ export default function SettingsPage() {
   async function addTeamMember(e: any) {
     e.preventDefault(); if (!newEmail) return;
     try {
-      await supabase.from('user_roles').insert([{ email: newEmail.toLowerCase(), role: newRole }]);
-      await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: newEmail.toLowerCase(), subject: "Welcome to OphirCRE", text: `You have been granted ${newRole.toUpperCase()} access. Log in here: https://app.ophircre.com/portal-login` }) });
-      alert("Team member added!"); setNewEmail('');
+      // FIX: Attach your organization_id so the assistant can see your properties!
+      await supabase.from('user_roles').insert([{ 
+        email: newEmail.toLowerCase(), 
+        role: newRole,
+        organization_id: orgId 
+      }]);
+      
+      await fetch('/api/send-email', { 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ to: newEmail.toLowerCase(), subject: "Welcome to OphirCRE", text: `You have been granted ${newRole.toUpperCase()} access. Log in here: https://app.ophircre.com/portal-login` }) 
+      });
+      
+      alert("Team member added and Welcome Email sent!"); setNewEmail('');
       const { data } = await supabase.from('user_roles').select('*').order('role', { ascending: true });
       if (data) setTeam(data);
     } catch (error: any) { alert("Error: " + error.message); }
@@ -153,18 +166,13 @@ export default function SettingsPage() {
 
       <main className="flex-1 overflow-y-auto p-8 bg-gray-100">
         
-        {/* NEW: SAAS BRANDING TAB */}
         {activeTab === 'branding' && (
           <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 p-8 mt-10">
             <h3 className="font-bold text-2xl text-gray-800 mb-2">White-Label Branding</h3>
             <p className="text-gray-600 mb-8">Customize the look and feel of the Tenant and Vendor portals so they match your company's brand identity.</p>
-            
             <div className="space-y-6">
               <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div>
-                  <h4 className="font-bold text-gray-900">Company Logo</h4>
-                  <p className="text-xs text-gray-500">Displayed at the top of all public portals.</p>
-                </div>
+                <div><h4 className="font-bold text-gray-900">Company Logo</h4><p className="text-xs text-gray-500">Displayed at the top of all public portals.</p></div>
                 <div className="flex items-center space-x-4">
                   {org?.logo_url && <img src={org.logo_url} alt="Logo" className="h-12 w-auto object-contain" />}
                   <label className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold cursor-pointer transition">
@@ -173,12 +181,8 @@ export default function SettingsPage() {
                   </label>
                 </div>
               </div>
-
               <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div>
-                  <h4 className="font-bold text-gray-900">Primary Brand Color</h4>
-                  <p className="text-xs text-gray-500">Used for buttons and banners.</p>
-                </div>
+                <div><h4 className="font-bold text-gray-900">Primary Brand Color</h4><p className="text-xs text-gray-500">Used for buttons and banners.</p></div>
                 <div className="flex items-center space-x-4">
                   <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="h-10 w-10 rounded cursor-pointer" />
                   <button onClick={saveBranding} className="bg-gray-800 text-white px-4 py-2 rounded font-bold">Save Color</button>
@@ -241,10 +245,13 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 h-fit">
               <h3 className="font-bold text-gray-800 mb-4">Invite New Staff</h3>
               <form onSubmit={addTeamMember} className="space-y-4">
-                <input type="email" required placeholder="Staff Email Address" className="w-full border p-2 rounded outline-none" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
-                <select className="w-full border p-2 rounded outline-none" value={newRole} onChange={(e) => setNewRole(e.target.value)}>
-                  <option value="admin">Admin (Full Access)</option><option value="manager">Property Manager (Ops & Leasing)</option><option value="accountant">Accountant (Financials & Reports)</option><option value="assistant">Assistant (General Ops)</option><option value="maintenance">Maintenance (Tasks Only)</option>
-                </select>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Staff Email Address</label><input type="email" required className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} /></div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Security Role</label>
+                  <select className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={newRole} onChange={(e) => setNewRole(e.target.value)}>
+                    <option value="admin">Admin (Full Access)</option><option value="manager">Property Manager (Ops & Leasing)</option><option value="accountant">Accountant (Financials & Reports)</option><option value="assistant">Assistant (General Ops)</option><option value="maintenance">Maintenance (Tasks Only)</option>
+                  </select>
+                </div>
                 <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md font-bold transition">Grant Access</button>
               </form>
             </div>
