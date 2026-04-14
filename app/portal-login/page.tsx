@@ -3,9 +3,9 @@ import { useState } from 'react'
 import { supabase } from '@/app/utils/supabase'
 
 export default function PortalLoginPage() {
-  const[email, setEmail] = useState('')
+  const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const[isSent, setIsSent] = useState(false)
+  const [isSent, setIsSent] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
   async function handleMagicLinkLogin(e: any) {
@@ -17,8 +17,8 @@ export default function PortalLoginPage() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          // This tells Supabase where to send them after they click the link in their email
-          emailRedirectTo: `${window.location.origin}/portal`,
+          // FIX: Send everyone to the root homepage so the Traffic Cop can route them!
+          emailRedirectTo: `${window.location.origin}/`,
         },
       })
 

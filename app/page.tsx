@@ -4,20 +4,34 @@ import { supabase } from '@/app/utils/supabase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 export default function Dashboard() {
-  const [stats, setStats] = useState({ props: 0, tenants: 0, tasks: 0, occupancy: 0, arrears: 0 });
+  const[stats, setStats] = useState({ props: 0, tenants: 0, tasks: 0, occupancy: 0, arrears: 0 });
   const [recentTasks, setRecentTasks] = useState<any[]>([]);
-  const [recentTxns, setRecentTxns] = useState<any[]>([]);
+  const[recentTxns, setRecentTxns] = useState<any[]>([]);
   const [surveys, setSurveys] = useState<any[]>([]);
-  const[avgRating, setAvgRating] = useState(0);
-  const [chartData, setChartData] = useState<any[]>([]);
+  const [avgRating, setAvgRating] = useState(0);
+  const[chartData, setChartData] = useState<any[]>([]);
 
   useEffect(() => {
     let mounted = true;
     async function loadDashboard() {
+      // NEW: THE TRAFFIC COP ROUTER
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.email) {
+        // Check if Tenant
+        const { data: tData } = await supabase.from('tenants').select('id').ilike('contact_email', session.user.email).maybeSingle();
+        if (tData) { window.location.href = '/portal'; return; }
+        
+        // Check if Vendor
+        const { data: vData } = await supabase.from('vendors').select('id').ilike('contact_email', session.user.email).maybeSingle();
+        if (vData) { window.location.href = '/vendor-portal'; return; }
+      }
+
+      // 1. Basic Stats
       const { count: pCount } = await supabase.from('properties').select('*', { count: 'exact', head: true });
       const { count: tCount } = await supabase.from('tenants').select('*', { count: 'exact', head: true }).eq('status', 'active');
       const { count: tkCount } = await supabase.from('tasks').select('*', { count: 'exact', head: true }).neq('status', 'Done');
       
+      // 2. Calculate Occupancy Rate
       const { data: spaces } = await supabase.from('spaces').select('id, square_footage');
       const { data: activeLeases } = await supabase.from('leases').select('space_id').eq('status', 'Active');
       
@@ -32,11 +46,13 @@ export default function Dashboard() {
       }
       const occupancyRate = totalSqft > 0 ? (leasedSqft / totalSqft) * 100 : 0;
 
+      // 3. Calculate Arrears (Overdue Rent)
       const { data: invoices } = await supabase.from('tenant_invoices').select('amount').in('status',['Unpaid', 'Overdue']);
       const totalArrears = invoices?.reduce((sum, i) => sum + Number(i.amount), 0) || 0;
 
       if (mounted) setStats({ props: pCount || 0, tenants: tCount || 0, tasks: tkCount || 0, occupancy: occupancyRate, arrears: totalArrears });
 
+      // Load Recent Data
       const { data: tasks } = await supabase.from('tasks').select('*').order('created_at', { ascending: false }).limit(5);
       if (tasks && mounted) setRecentTasks(tasks);
 
@@ -49,6 +65,7 @@ export default function Dashboard() {
         setAvgRating(srvs.reduce((sum, s) => sum + s.rating, 0) / srvs.length);
       }
 
+      // Chart Data
       const { data: journalEntries } = await supabase.from('journal_entries').select('debit, credit, chart_of_accounts(account_type), transactions(date)').order('transactions(date)', { ascending: true });
       if (journalEntries && mounted) {
         const monthlyData: Record<string, { name: string, Revenue: number, Expenses: number }> = {};
