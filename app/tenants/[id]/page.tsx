@@ -4,57 +4,96 @@ import { supabase } from '@/app/utils/supabase';
 import { useParams } from 'next/navigation';
 
 export default function TenantProfilePage() {
-  const params = useParams(); const tenantId = params.id;
-  const [tenant, setTenant] = useState<any>(null); const [lease, setLease] = useState<any>(null);
-  const[isSaving, setIsSaving] = useState(false); const [isExecuting, setIsExecuting] = useState(false);
-  const[activeTab, setActiveTab] = useState('lease');
-  const [invoices, setInvoices] = useState<any[]>([]); const [comms, setComps] = useState<any[]>([]); const [tasks, setTasks] = useState<any[]>([]);
+  const params = useParams(); 
+  const tenantId = params.id;
 
-  const [coiDate, setCoiDate] = useState(''); const[baseRent, setBaseRent] = useState(0);
-  const [camCharge, setCamCharge] = useState(0); const [taxCharge, setTaxCharge] = useState(0); const[insCharge, setInsCharge] = useState(0);
-  const [escalationDate, setEscalationDate] = useState(''); const [escalationType, setEscalationType] = useState('percentage');
-  const[escalationPct, setEscalationPct] = useState(0); const [escalationFixed, setEscalationFixed] = useState(0);
+  const [tenant, setTenant] = useState<any>(null); 
+  const[lease, setLease] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false); 
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [activeTab, setActiveTab] = useState('lease');
+  
+  const [invoices, setInvoices] = useState<any[]>([]); 
+  const [comms, setComps] = useState<any[]>([]); 
+  const[tasks, setTasks] = useState<any[]>([]);
+
+  const [coiDate, setCoiDate] = useState(''); 
+  const[baseRent, setBaseRent] = useState(0);
+  const [camCharge, setCamCharge] = useState(0); 
+  const [taxCharge, setTaxCharge] = useState(0); 
+  const[insCharge, setInsCharge] = useState(0);
+  
+  const [escalationDate, setEscalationDate] = useState(''); 
+  const[escalationType, setEscalationType] = useState('percentage');
+  const[escalationPct, setEscalationPct] = useState(0); 
+  const[escalationFixed, setEscalationFixed] = useState(0);
+
+  const [gracePeriod, setGracePeriod] = useState(5);
+  const[lateFeeType, setLateFeeType] = useState('percentage');
+  const [lateFeeAmount, setLateFeeAmount] = useState(5.0);
 
   const [isEscalationModalOpen, setIsEscalationModalOpen] = useState(false);
-  const[suggestedNewRent, setSuggestedNewRent] = useState('');
+  const [suggestedNewRent, setSuggestedNewRent] = useState('');
   const[escalationEmailBody, setEscalationEmailBody] = useState('');
 
   const [leaseQuestion, setLeaseQuestion] = useState('');
-  const [leaseAnswer, setLeaseAnswer] = useState('');
+  const[leaseAnswer, setLeaseAnswer] = useState('');
   const [isAsking, setIsAsking] = useState(false);
-  const [isOnboarding, setIsOnboarding] = useState(false);
+  const[isOnboarding, setIsOnboarding] = useState(false);
 
-  // NEW: Diagnostic Error State
+  // NEW: Robust Loading and Error States
+  const[isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState('');
 
   useEffect(() => {
     async function fetchTenantData() {
       if (!tenantId) return;
+      setIsLoading(true);
+      setFetchError('');
 
-      // 1. Fetch Tenant (Using maybeSingle to prevent hard crashes)
-      const { data: tData, error: tErr } = await supabase.from('tenants').select('*').eq('id', tenantId).maybeSingle();
-      
-      if (tErr) return setFetchError("Database Error: " + tErr.message);
-      if (!tData) return setFetchError("Tenant not found. It may have been deleted, or the RLS Firewall is blocking access because it is missing an organization_id.");
-      
-      setTenant(tData); 
-      setCoiDate(tData.coi_expiration || '');
+      try {
+        // 1. Fetch Tenant
+        const { data: tData, error: tErr } = await supabase.from('tenants').select('*').eq('id', tenantId).single();
+        if (tErr) throw new Error(`Tenant Error: ${tErr.message}`);
+        if (tData) { 
+          setTenant(tData); 
+          setCoiDate(tData.coi_expiration || ''); 
+        }
 
-      // 2. Fetch Lease (Using maybeSingle because they might not have a lease yet!)
-      const { data: lData } = await supabase.from('leases').select('*, spaces(name, properties(name))').eq('tenant_id', tenantId).maybeSingle();
-      if (lData) {
-        setLease(lData); setBaseRent(lData.base_rent_amount || 0); setCamCharge(lData.cam_charge || 0);
-        setTaxCharge(lData.tax_charge || 0); setInsCharge(lData.insurance_charge || 0);
-        setEscalationDate(lData.next_escalation_date || ''); setEscalationType(lData.escalation_type || 'percentage');
-        setEscalationPct(lData.escalation_percentage || 0); setEscalationFixed(lData.escalation_fixed_amount || 0);
+        // 2. Fetch Lease (Using maybeSingle so it doesn't crash if they don't have a lease yet!)
+        const { data: lData, error: lErr } = await supabase.from('leases').select('*, spaces(name, properties(name))').eq('tenant_id', tenantId).maybeSingle();
+        if (lErr) throw new Error(`Lease Error: ${lErr.message}`);
+        
+        if (lData) {
+          setLease(lData); 
+          setBaseRent(lData.base_rent_amount || 0); 
+          setCamCharge(lData.cam_charge || 0);
+          setTaxCharge(lData.tax_charge || 0); 
+          setInsCharge(lData.insurance_charge || 0);
+          setEscalationDate(lData.next_escalation_date || ''); 
+          setEscalationType(lData.escalation_type || 'percentage');
+          setEscalationPct(lData.escalation_percentage || 0); 
+          setEscalationFixed(lData.escalation_fixed_amount || 0);
+          setGracePeriod(lData.grace_period_days || 5); 
+          setLateFeeType(lData.late_fee_type || 'percentage'); 
+          setLateFeeAmount(lData.late_fee_amount || 5.0);
+        }
+
+        // 3. Fetch 360 Data
+        const { data: iData } = await supabase.from('tenant_invoices').select('*').eq('tenant_id', tenantId).order('due_date', { ascending: false });
+        if (iData) setInvoices(iData);
+        
+        const { data: cData } = await supabase.from('communications').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false });
+        if (cData) setComps(cData);
+        
+        const { data: tkData } = await supabase.from('tasks').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false });
+        if (tkData) setTasks(tkData);
+
+      } catch (error: any) {
+        setFetchError(error.message);
+      } finally {
+        setIsLoading(false);
       }
-
-      const { data: iData } = await supabase.from('tenant_invoices').select('*').eq('tenant_id', tenantId).order('due_date', { ascending: false });
-      if (iData) setInvoices(iData);
-      const { data: cData } = await supabase.from('communications').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false });
-      if (cData) setComps(cData);
-      const { data: tkData } = await supabase.from('tasks').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false });
-      if (tkData) setTasks(tkData);
     }
     fetchTenantData();
   }, [tenantId]);
@@ -68,7 +107,8 @@ export default function TenantProfilePage() {
           base_rent_amount: baseRent, cam_charge: camCharge, tax_charge: taxCharge, insurance_charge: insCharge,
           next_escalation_date: escalationDate || null, escalation_type: escalationType,
           escalation_percentage: escalationType === 'percentage' ? escalationPct : 0,
-          escalation_fixed_amount: escalationType === 'fixed' ? escalationFixed : 0
+          escalation_fixed_amount: escalationType === 'fixed' ? escalationFixed : 0,
+          grace_period_days: gracePeriod, late_fee_type: lateFeeType, late_fee_amount: lateFeeAmount
         }).eq('id', lease.id);
       }
       alert("Profile and Financials Updated!");
@@ -137,9 +177,18 @@ export default function TenantProfilePage() {
     } catch (error: any) { alert("AI Error: " + error.message); } finally { setIsAsking(false); }
   }
 
-  // DIAGNOSTIC ERROR DISPLAY
-  if (fetchError) return <div className="p-8 m-8 bg-red-50 border-l-4 border-red-600 text-red-800 font-bold shadow-sm">{fetchError}</div>;
-  if (!tenant) return <div className="p-8 text-gray-500">Loading Tenant 360 Profile...</div>;
+  // --- DIAGNOSTIC RENDERING ---
+  if (isLoading) return <div className="p-8 text-gray-500 font-bold">Loading Tenant 360 Profile...</div>;
+  
+  if (fetchError) return (
+    <div className="p-8 m-8 bg-red-50 border-l-4 border-red-600 rounded-r-lg shadow-sm">
+      <h3 className="text-red-800 font-bold text-lg">Database Error</h3>
+      <p className="text-red-600 font-mono mt-2">{fetchError}</p>
+      <p className="text-sm text-gray-600 mt-4">If this says "JSON object requested, multiple (or no) rows returned", it means the tenant was created before the SaaS firewall was activated, so it is missing an organization_id!</p>
+    </div>
+  );
+
+  if (!tenant) return <div className="p-8 text-gray-500">Tenant not found.</div>;
 
   const unpaidBalance = invoices.filter(i => i.status !== 'Paid').reduce((sum, i) => sum + Number(i.amount), 0);
 
@@ -194,6 +243,14 @@ export default function TenantProfilePage() {
                     <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Tax Escrow</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right" value={taxCharge} onChange={(e) => setTaxCharge(Number(e.target.value))} /></div></div>
                     <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Insurance Escrow</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right" value={insCharge} onChange={(e) => setInsCharge(Number(e.target.value))} /></div></div>
                   </div>
+                  
+                  <div className="space-y-3 pt-4 border-t">
+                    <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Late Fee Policy</h4>
+                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Grace Period (Days)</label><input type="number" className="border p-2 rounded w-40 outline-none" value={gracePeriod} onChange={(e) => setGracePeriod(Number(e.target.value))} /></div>
+                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Fee Type</label><select className="border p-2 rounded w-40 outline-none text-sm" value={lateFeeType} onChange={(e) => setLateFeeType(e.target.value)}><option value="percentage">Percentage (%)</option><option value="fixed">Fixed Amount ($)</option></select></div>
+                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Penalty Amount</label><input type="number" step="0.1" className="border p-2 rounded w-40 text-right outline-none" value={lateFeeAmount} onChange={(e) => setLateFeeAmount(Number(e.target.value))} /></div>
+                  </div>
+
                   <div className="space-y-3 pt-4 border-t">
                     <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Rent Escalation Rules</h4>
                     <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Next Bump Date</label><input type="date" className="border p-2 rounded w-40 outline-none" value={escalationDate} onChange={(e) => setEscalationDate(e.target.value)} /></div>
@@ -224,9 +281,10 @@ export default function TenantProfilePage() {
                     <td className="px-6 py-4 text-sm text-gray-500">{inv.due_date}</td>
                     <td className="px-6 py-4 text-sm font-medium text-gray-900">{inv.description}</td>
                     <td className="px-6 py-4 text-sm font-bold text-gray-900">${Number(inv.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td className="px-6 py-4 text-sm"><span className={`px-2 py-1 rounded-full text-xs font-bold ${inv.status === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{inv.status}</span></td>
+                    <td className="px-6 py-4 text-sm"><span className={`px-2 py-1 rounded-full text-xs font-bold ${inv.status === 'Paid' ? 'bg-green-100 text-green-800' : inv.status === 'Overdue' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{inv.status}</span></td>
                   </tr>
                 ))}
+                {invoices.length === 0 && <tr><td colSpan={4} className="px-6 py-8 text-center text-gray-500">No invoices on file.</td></tr>}
               </tbody>
             </table>
           </div>
