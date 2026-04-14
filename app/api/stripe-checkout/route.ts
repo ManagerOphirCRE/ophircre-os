@@ -1,20 +1,19 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
-// Initialize Stripe securely
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
-  apiVersion: '2023-10-16' as any
-});
-
 export async function POST(req: Request) {
   try {
+    // FIX: Moved inside the function with a fallback so Vercel doesn't crash during build!
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy', {
+      apiVersion: '2023-10-16' as any
+    });
+
     const { amount, tenantName, tenantId } = await req.json();
 
     if (!amount || amount <= 0) throw new Error("Invalid payment amount.");
 
-    // Create a secure Stripe Checkout Session
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card', 'us_bank_account'], // Allows Credit Card OR ACH Bank Transfer
+      payment_method_types: ['card', 'us_bank_account'],
       line_items:[
         {
           price_data: {
@@ -23,13 +22,12 @@ export async function POST(req: Request) {
               name: `Rent & Balance Payment - ${tenantName}`,
               description: 'OphirCRE Property Management'
             },
-            unit_amount: Math.round(amount * 100), // Stripe calculates in cents (e.g., $50.00 = 5000)
+            unit_amount: Math.round(amount * 100),
           },
           quantity: 1,
         },
       ],
       mode: 'payment',
-      // Send them back to the portal with a success flag so we can update their balance!
       success_url: `https://app.ophircre.com/portal?success=true&amount=${amount}`,
       cancel_url: `https://app.ophircre.com/portal?canceled=true`,
     });
