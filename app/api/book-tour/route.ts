@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+// FIX: Added fallback dummy keys so Vercel doesn't crash during the build!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'dummy_key';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function POST(req: Request) {
   try {
     const { propertyId, prospectName, prospectEmail, prospectPhone, tourDate } = await req.json();
 
-    // 1. Save the Tour to the database (Unassigned broker for now)
     const { error: tourError } = await supabase.from('tours').insert([{
       property_id: propertyId,
       prospect_name: `${prospectName} (${prospectPhone} | ${prospectEmail})`,
@@ -16,14 +18,12 @@ export async function POST(req: Request) {
     }]);
     if (tourError) throw tourError;
 
-    // 2. Drop an alert on the Admin Task Board
     await supabase.from('tasks').insert([{
       title: `NEW TOUR SCHEDULED: ${prospectName}`,
       description: `A prospect booked a tour for ${tourDate}.\nEmail: ${prospectEmail}\nPhone: ${prospectPhone}\n\nPlease go to the Broker CRM to assign a leasing agent.`,
       status: 'To Do'
     }]);
 
-    // 3. Send a confirmation email to the prospect
     await fetch('https://app.ophircre.com/api/send-email', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
