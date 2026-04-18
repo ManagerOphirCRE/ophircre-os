@@ -4,12 +4,20 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
+    // 1. Polyfills to prevent Vercel crashes
     if (typeof global.DOMMatrix === 'undefined') { (global as any).DOMMatrix = class {}; }
     if (typeof global.ImageData === 'undefined') { (global as any).ImageData = class {}; }
+    if (typeof global.Path2D === 'undefined') { (global as any).Path2D = class {}; }
     
-    // FIX: Added ': any' to bypass TypeScript's strict module checking
-    const pdfModule: any = await import('pdf-parse');
-    const parsePdf = pdfModule.default || pdfModule;
+    // 2. INDESTRUCTIBLE IMPORT: Hunt for the function no matter how Vercel mangles it
+    const pdfModule = require('pdf-parse');
+    let parsePdf = pdfModule;
+    if (typeof parsePdf !== 'function') parsePdf = pdfModule.default;
+    if (typeof parsePdf !== 'function') parsePdf = pdfModule.PDF;
+    if (typeof parsePdf !== 'function') {
+      parsePdf = Object.values(pdfModule).find(val => typeof val === 'function');
+    }
+    if (typeof parsePdf !== 'function') throw new Error("Vercel minifier destroyed the PDF module.");
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
