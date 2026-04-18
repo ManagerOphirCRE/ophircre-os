@@ -1,24 +1,10 @@
 import { NextResponse } from 'next/server';
+import pdf from 'pdf-parse';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
-    // 1. Polyfills to prevent Vercel crashes
-    if (typeof global.DOMMatrix === 'undefined') { (global as any).DOMMatrix = class {}; }
-    if (typeof global.ImageData === 'undefined') { (global as any).ImageData = class {}; }
-    if (typeof global.Path2D === 'undefined') { (global as any).Path2D = class {}; }
-    
-    // 2. INDESTRUCTIBLE IMPORT: Hunt for the function no matter how Vercel mangles it
-    const pdfModule = require('pdf-parse');
-    let parsePdf = pdfModule;
-    if (typeof parsePdf !== 'function') parsePdf = pdfModule.default;
-    if (typeof parsePdf !== 'function') parsePdf = pdfModule.PDF;
-    if (typeof parsePdf !== 'function') {
-      parsePdf = Object.values(pdfModule).find(val => typeof val === 'function');
-    }
-    if (typeof parsePdf !== 'function') throw new Error("Vercel minifier destroyed the PDF module.");
-
     const formData = await req.formData();
     const file = formData.get('file') as File;
     if (!file) throw new Error("No file uploaded");
@@ -51,7 +37,7 @@ export async function POST(req: Request) {
         { type: "image_url", image_url: { url: `data:${file.type};base64,${base64Image}` } }
       ];
     } else {
-      const pdfData = await parsePdf(buffer);
+      const pdfData = await pdf(buffer);
       messagesContent =[{ type: "text", text: promptText + `\n\nDOCUMENT TEXT:\n${pdfData.text}` }];
     }
 
