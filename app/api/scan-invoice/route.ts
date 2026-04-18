@@ -2,8 +2,12 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   try {
-    // FIX: Moved inside the function so Vercel ignores it during the build
-    const pdf = require('pdf-parse'); 
+    if (typeof global.DOMMatrix === 'undefined') { global.DOMMatrix = class {} as any; }
+    if (typeof global.ImageData === 'undefined') { global.ImageData = class {} as any; }
+    
+    // FIX: Unwrap the module so Vercel's production server can read it
+    const pdfModule = require('pdf-parse'); 
+    const parsePdf = pdfModule.default || pdfModule;
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
@@ -20,8 +24,7 @@ export async function POST(req: Request) {
       Return ONLY a valid JSON object with these exact keys. If a value is not found, leave it as an empty string (or 0 for numbers).
       {
         "payee_name": "Name of the vendor, lender, or billing company",
-        "invoice_number": "The invoice or statement number (if any)",
-        "date": "YYYY-MM-DD (The statement date or invoice date)",
+        "date": "YYYY-MM-DD",
         "total_amount": numeric value only,
         "is_mortgage": boolean (true ONLY if this is a mortgage/loan statement),
         "principal_amount": numeric value (if mortgage),
@@ -33,38 +36,25 @@ export async function POST(req: Request) {
 
     if (isImage) {
       const base64Image = buffer.toString('base64');
-      const dataUri = `data:${file.type};base64,${base64Image}`;
       messagesContent =[
         { type: "text", text: promptText },
-        { type: "image_url", image_url: { url: dataUri } }
+        { type: "image_url", image_url: { url: `data:${file.type};base64,${base64Image}` } }
       ];
     } else {
-      const pdfData = await pdf(buffer);
-      messagesContent =[
-        { type: "text", text: promptText + `\n\nDOCUMENT TEXT:\n${pdfData.text}` }
-      ];
+      const pdfData = await parsePdf(buffer);
+      messagesContent =[{ type: "text", text: promptText + `\n\nDOCUMENT TEXT:\n${pdfData.text}` }];
     }
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: messagesContent }],
-        temperature: 0.1,
-        response_format: { type: "json_object" }
-      })
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: messagesContent }], temperature: 0.1, response_format: { type: "json_object" } })
     });
 
     const data = await response.json();
-    if (data.error) return NextResponse.json({ error: data.error.message }, { status: 500 });
+    if (data.error) throw new Error(data.error.message);
 
-    const extractedData = JSON.parse(data.choices[0].message.content);
-    return NextResponse.json(extractedData);
-
+    return NextResponse.json(JSON.parse(data.choices[0].message.content));
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
