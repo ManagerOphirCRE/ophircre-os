@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server';
 
+// FIX: Tells Vercel not to aggressively cache or minify this specific API route
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
   try {
-    if (typeof global.DOMMatrix === 'undefined') { global.DOMMatrix = class {} as any; }
-    if (typeof global.ImageData === 'undefined') { global.ImageData = class {} as any; }
+    if (typeof global.DOMMatrix === 'undefined') { (global as any).DOMMatrix = class {}; }
+    if (typeof global.ImageData === 'undefined') { (global as any).ImageData = class {}; }
     
-    // FIX: Unwrap the module so Vercel's production server can read it
-    const pdfModule = require('pdf-parse'); 
-    const parsePdf = pdfModule.default || pdfModule;
+    // FIX: Modern dynamic import prevents the "a is not a function" minification bug
+    const pdfModule = await import('pdf-parse');
+    const parsePdf = typeof pdfModule === 'function' ? pdfModule : pdfModule.default;
 
     const formData = await req.formData();
     const file = formData.get('file') as File;

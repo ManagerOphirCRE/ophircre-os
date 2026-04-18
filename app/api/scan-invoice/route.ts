@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
   try {
-    if (typeof global.DOMMatrix === 'undefined') { global.DOMMatrix = class {} as any; }
-    if (typeof global.ImageData === 'undefined') { global.ImageData = class {} as any; }
+    if (typeof global.DOMMatrix === 'undefined') { (global as any).DOMMatrix = class {}; }
+    if (typeof global.ImageData === 'undefined') { (global as any).ImageData = class {}; }
     
-    // FIX: Unwrap the module so Vercel's production server can read it
-    const pdfModule = require('pdf-parse'); 
-    const parsePdf = pdfModule.default || pdfModule;
+    // FIX: Modern dynamic import
+    const pdfModule = await import('pdf-parse');
+    const parsePdf = typeof pdfModule === 'function' ? pdfModule : pdfModule.default;
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
@@ -48,7 +50,7 @@ export async function POST(req: Request) {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
-      body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: messagesContent }], temperature: 0.1, response_format: { type: "json_object" } })
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages:[{ role: 'user', content: messagesContent }], temperature: 0.1, response_format: { type: "json_object" } })
     });
 
     const data = await response.json();
