@@ -7,9 +7,9 @@ export async function POST(req: Request) {
     if (typeof global.DOMMatrix === 'undefined') { (global as any).DOMMatrix = class {}; }
     if (typeof global.ImageData === 'undefined') { (global as any).ImageData = class {}; }
     
-    // FIX: Modern dynamic import
-    const pdfModule = await import('pdf-parse');
-    const parsePdf = typeof pdfModule === 'function' ? pdfModule : pdfModule.default;
+    // FIX: Added ': any' to bypass TypeScript's strict module checking
+    const pdfModule: any = await import('pdf-parse');
+    const parsePdf = pdfModule.default || pdfModule;
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
