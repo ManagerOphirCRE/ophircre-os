@@ -8,20 +8,20 @@ import { useOrg } from '@/app/context/OrgContext';
 export default function FinancialsPage() {
   const { orgId } = useOrg(); // FIX: Added orgId from context!
   
-  const[transactions, setTransactions] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
-  const [properties, setProperties] = useState<any[]>([]);
+  const[properties, setProperties] = useState<any[]>([]);
   const[tenantLeases, setTenantLeases] = useState<any[]>([]);
   
-  const[isModalOpen, setIsModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [date, setDate] = useState('');
   const [description, setDescription] = useState('');
   const [totalAmount, setTotalAmount] = useState('');
-  const [splits, setSplits] = useState([{ account_id: '', property_id: '', amount: '', memo: '' }]);
+  const[splits, setSplits] = useState([{ account_id: '', property_id: '', amount: '', memo: '' }]);
 
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
-  const [csvRows, setCsvRows] = useState<any[]>([]);
-  const[isProcessingCsv, setIsProcessingCsv] = useState(false);
+  const[csvRows, setCsvRows] = useState<any[]>([]);
+  const [isProcessingCsv, setIsProcessingCsv] = useState(false);
 
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -97,7 +97,7 @@ export default function FinancialsPage() {
   }, [description]);
 
   function addSplitRow() { setSplits([...splits, { account_id: '', property_id: '', amount: '', memo: '' }]); }
-  function updateSplit(index: number, field: string, value: string) { const newSplits = [...splits]; newSplits[index] = { ...newSplits[index], [field]: value }; setSplits(newSplits); }
+  function updateSplit(index: number, field: string, value: string) { const newSplits = [...splits]; newSplits[index] = { ...newSplits[index],[field]: value }; setSplits(newSplits); }
   
   async function handleAccountSelect(index: number, value: string) {
     if (value === 'NEW_CATEGORY') {
