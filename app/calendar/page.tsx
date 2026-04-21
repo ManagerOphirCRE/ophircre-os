@@ -103,7 +103,7 @@ export default function CalendarPage() {
             style={{ height: '100%' }}
             eventPropGetter={eventStyleGetter}
             views={['month', 'week', 'day', 'agenda']}
-            onSelectEvent={(event) => alert(`Details:\n\n${event.title}\nDate: ${event.start.toLocaleString()}`)}
+            onSelectEvent={(event: any) => alert(`Details:\n\n${event.title}\nDate: ${event.start.toLocaleString()}`)}
           />
         </div>
       </main>
