@@ -10,9 +10,10 @@ export async function GET(req: Request) {
     const orgId = url.searchParams.get('state');
     const realmId = url.searchParams.get('realmId');
 
+    // FIX: Added || '' to guarantee it is always a string
     const oauthClient = new OAuthClient({
-      clientId: process.env.QBO_CLIENT_ID,
-      clientSecret: process.env.QBO_CLIENT_SECRET,
+      clientId: process.env.QBO_CLIENT_ID || '',
+      clientSecret: process.env.QBO_CLIENT_SECRET || '',
       environment: 'sandbox',
       redirectUri: 'https://app.ophircre.com/api/qbo-callback'
     });
