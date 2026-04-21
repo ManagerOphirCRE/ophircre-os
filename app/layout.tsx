@@ -11,6 +11,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 const NAV_LINKS =[
   { name: 'Dashboard', path: '/', allowed: ['admin', 'manager', 'accountant', 'assistant', 'maintenance'] },
+  { name: 'Master Calendar', path: '/calendar', allowed:['admin', 'manager', 'assistant'] },
   { name: 'Workspace', path: '/workspace', allowed: ['admin', 'manager', 'assistant'] },
   { name: 'Properties', path: '/properties', allowed: ['admin', 'manager', 'accountant', 'assistant'] },
   { name: 'Rent Roll', path: '/rent-roll', allowed:['admin', 'manager', 'accountant'] },
