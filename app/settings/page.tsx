@@ -2,25 +2,28 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/app/utils/supabase';
 import JSZip from 'jszip';
-import { useOrg } from '@/app/context/OrgContext'; // NEW: Import the Org Context
+import { useOrg } from '@/app/context/OrgContext';
 
 export default function SettingsPage() {
-  const { orgId } = useOrg(); // NEW: Grab your company ID
-  
+  const { orgId } = useOrg();
   const [activeTab, setActiveTab] = useState('accounts');
   const [accounts, setAccounts] = useState<any[]>([]);
   const [team, setTeam] = useState<any[]>([]);
   const [apiKeys, setApiKeys] = useState<any[]>([]);
-  const[org, setOrg] = useState<any>(null);
+  const [webhooks, setWebhooks] = useState<any[]>([]); // NEW: Webhooks state
+  const [org, setOrg] = useState<any>(null);
   
   const [newEmail, setNewEmail] = useState('');
-  const [newRole, setNewRole] = useState('assistant');
+  const[newRole, setNewRole] = useState('assistant');
   const [userEmail, setUserEmail] = useState('');
-  const [pushEnabled, setPushEnabled] = useState(false);
-  const[isExporting, setIsExporting] = useState(false);
-  
+  const[pushEnabled, setPushEnabled] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [primaryColor, setPrimaryColor] = useState('#2563eb');
-  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const[isUploadingLogo, setIsUploadingLogo] = useState(false);
+
+  // NEW: Webhook Form State
+  const[hookUrl, setHookUrl] = useState('');
+  const [hookEvent, setHookEvent] = useState('lease_signed');
 
   useEffect(() => {
     async function fetchData() {
@@ -29,21 +32,19 @@ export default function SettingsPage() {
         setUserEmail(session.user.email);
         if (orgId) {
           const { data: orgData } = await supabase.from('organizations').select('*').eq('id', orgId).single();
-          if (orgData) {
-            setOrg(orgData);
-            setPrimaryColor(orgData.primary_color || '#2563eb');
-          }
+          if (orgData) { setOrg(orgData); setPrimaryColor(orgData.primary_color || '#2563eb'); }
         }
       }
-
       const { data: accData } = await supabase.from('chart_of_accounts').select('*').order('account_type', { ascending: true });
       if (accData) setAccounts(accData);
-      
       const { data: teamData } = await supabase.from('user_roles').select('*').order('role', { ascending: true });
       if (teamData) setTeam(teamData);
-
       const { data: keyData } = await supabase.from('api_keys').select('*').order('created_at', { ascending: false });
       if (keyData) setApiKeys(keyData);
+      
+      // Fetch Webhooks
+      const { data: hookData } = await supabase.from('outbound_webhooks').select('*').order('created_at', { ascending: false });
+      if (hookData) setWebhooks(hookData);
 
       if ('Notification' in window && Notification.permission === 'granted') setPushEnabled(true);
     }
@@ -115,6 +116,24 @@ export default function SettingsPage() {
     if (data) setApiKeys(data);
   }
 
+  // NEW: Save Webhook
+  async function saveWebhook(e: any) {
+    e.preventDefault();
+    try {
+      await supabase.from('outbound_webhooks').insert([{ target_url: hookUrl, event_type: hookEvent, organization_id: orgId }]);
+      setHookUrl('');
+      const { data } = await supabase.from('outbound_webhooks').select('*').order('created_at', { ascending: false });
+      if (data) setWebhooks(data);
+      alert("Webhook saved! Zapier will now receive payloads for this event.");
+    } catch (error: any) { alert("Error: " + error.message); }
+  }
+
+  async function deleteWebhook(id: string) {
+    await supabase.from('outbound_webhooks').delete().eq('id', id);
+    const { data } = await supabase.from('outbound_webhooks').select('*').order('created_at', { ascending: false });
+    if (data) setWebhooks(data);
+  }
+
   async function deleteAccount(id: string) {
     if (!confirm("Are you sure?")) return;
     await supabase.from('chart_of_accounts').delete().eq('id', id);
@@ -125,18 +144,8 @@ export default function SettingsPage() {
   async function addTeamMember(e: any) {
     e.preventDefault(); if (!newEmail) return;
     try {
-      // FIX: Attach your organization_id so the assistant can see your properties!
-      await supabase.from('user_roles').insert([{ 
-        email: newEmail.toLowerCase(), 
-        role: newRole,
-        organization_id: orgId 
-      }]);
-      
-      await fetch('/api/send-email', { 
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ to: newEmail.toLowerCase(), subject: "Welcome to OphirCRE", text: `You have been granted ${newRole.toUpperCase()} access. Log in here: https://app.ophircre.com/portal-login` }) 
-      });
-      
+      await supabase.from('user_roles').insert([{ email: newEmail.toLowerCase(), role: newRole, organization_id: orgId }]);
+      await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: newEmail.toLowerCase(), subject: "Welcome to OphirCRE", text: `You have been granted ${newRole.toUpperCase()} access. Log in here: https://app.ophircre.com/portal-login` }) });
       alert("Team member added and Welcome Email sent!"); setNewEmail('');
       const { data } = await supabase.from('user_roles').select('*').order('role', { ascending: true });
       if (data) setTeam(data);
@@ -149,6 +158,29 @@ export default function SettingsPage() {
     await supabase.from('user_roles').delete().eq('email', email);
     const { data } = await supabase.from('user_roles').select('*').order('role', { ascending: true });
     if (data) setTeam(data);
+  }
+
+  function urlBase64ToUint8Array(base64String: string) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) { outputArray[i] = rawData.charCodeAt(i); }
+    return outputArray;
+  }
+
+  async function enablePushNotifications() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return alert("Push notifications are not supported on this device/browser.");
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return alert("Permission denied.");
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      const publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!publicVapidKey) throw new Error("VAPID Public Key missing.");
+      const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicVapidKey) });
+      await fetch('/api/save-subscription', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subscription, email: userEmail }) });
+      setPushEnabled(true); alert("Notifications Enabled!");
+    } catch (error: any) { alert("Error: " + error.message); }
   }
 
   return (
@@ -169,10 +201,10 @@ export default function SettingsPage() {
         {activeTab === 'branding' && (
           <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 p-8 mt-10">
             <h3 className="font-bold text-2xl text-gray-800 mb-2">White-Label Branding</h3>
-            <p className="text-gray-600 mb-8">Customize the look and feel of the Tenant and Vendor portals so they match your company's brand identity.</p>
+            <p className="text-gray-600 mb-8">Customize the look and feel of the Tenant and Vendor portals.</p>
             <div className="space-y-6">
               <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div><h4 className="font-bold text-gray-900">Company Logo</h4><p className="text-xs text-gray-500">Displayed at the top of all public portals.</p></div>
+                <div><h4 className="font-bold text-gray-900">Company Logo</h4></div>
                 <div className="flex items-center space-x-4">
                   {org?.logo_url && <img src={org.logo_url} alt="Logo" className="h-12 w-auto object-contain" />}
                   <label className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold cursor-pointer transition">
@@ -182,7 +214,7 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div><h4 className="font-bold text-gray-900">Primary Brand Color</h4><p className="text-xs text-gray-500">Used for buttons and banners.</p></div>
+                <div><h4 className="font-bold text-gray-900">Primary Brand Color</h4></div>
                 <div className="flex items-center space-x-4">
                   <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="h-10 w-10 rounded cursor-pointer" />
                   <button onClick={saveBranding} className="bg-gray-800 text-white px-4 py-2 rounded font-bold">Save Color</button>
@@ -201,10 +233,10 @@ export default function SettingsPage() {
         )}
 
         {activeTab === 'api' && (
-          <div className="max-w-4xl mx-auto space-y-6">
+          <div className="max-w-5xl mx-auto space-y-6">
+            
+            {/* QBO INTEGRATION */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex justify-between items-center">
-              <div><h3 className="font-bold text-gray-800">Public API Keys</h3><p className="text-sm text-gray-500 mt-1">Generate secure tokens to connect OphirCRE to Zapier.</p></div>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex justify-between items-center mt-6">
               <div>
                 <h3 className="font-bold text-gray-800 flex items-center"><span className="text-green-600 mr-2 text-xl">qb</span> QuickBooks Online</h3>
                 <p className="text-sm text-gray-500 mt-1">Connect your QBO account to automatically sync Journal Entries.</p>
@@ -213,19 +245,51 @@ export default function SettingsPage() {
                 Connect QuickBooks
               </button>
             </div>
-              <button onClick={generateApiKey} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md font-bold transition shadow-sm">+ Generate New Key</button>
-            </div>
+
+            {/* ZAPIER WEBHOOKS */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="p-6 bg-gray-50 border-b flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-gray-800">Outbound Webhooks (Zapier / Make)</h3>
+                  <p className="text-sm text-gray-500">Fire data to external apps when events happen in OphirCRE.</p>
+                </div>
+              </div>
+              <div className="p-6 border-b border-gray-200">
+                <form onSubmit={saveWebhook} className="flex space-x-4">
+                  <select className="border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={hookEvent} onChange={(e) => setHookEvent(e.target.value)}>
+                    <option value="lease_signed">Lease Signed</option>
+                    <option value="maintenance_requested">Maintenance Requested</option>
+                  </select>
+                  <input type="url" required placeholder="https://hooks.zapier.com/..." className="flex-1 border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={hookUrl} onChange={(e) => setHookUrl(e.target.value)} />
+                  <button type="submit" className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-2 rounded font-bold transition shadow-sm">Add Webhook</button>
+                </form>
+              </div>
               <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Integration Name</th><th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">API Key (Hidden)</th><th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Created</th><th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase">Action</th></tr></thead>
-                <tbody className="divide-y divide-gray-200">
-                  {apiKeys.map(key => (<tr key={key.id} className="hover:bg-gray-50"><td className="px-6 py-4 text-sm font-bold text-gray-900">{key.name}</td><td className="px-6 py-4 text-sm font-mono text-gray-500">sk_live_••••••••••••••••</td><td className="px-6 py-4 text-sm text-gray-500">{new Date(key.created_at).toLocaleDateString()}</td><td className="px-6 py-4 text-right"><button onClick={() => revokeApiKey(key.id)} className="text-red-500 text-xs font-bold hover:underline">Revoke</button></td></tr>))}
+                <thead className="bg-white"><tr><th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Event Trigger</th><th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Target URL</th><th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase">Action</th></tr></thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {webhooks.map(hook => (<tr key={hook.id} className="hover:bg-gray-50"><td className="px-6 py-4 text-sm font-bold text-gray-900">{hook.event_type}</td><td className="px-6 py-4 text-sm text-gray-500 font-mono truncate max-w-xs">{hook.target_url}</td><td className="px-6 py-4 text-right"><button onClick={() => deleteWebhook(hook.id)} className="text-red-500 text-xs font-bold hover:underline">Delete</button></td></tr>))}
+                  {webhooks.length === 0 && <tr><td colSpan={3} className="px-6 py-8 text-center text-gray-500">No webhooks configured.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+
+            {/* INBOUND API KEYS */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-6">
+              <div className="p-6 bg-gray-50 border-b flex justify-between items-center">
+                <div><h3 className="font-bold text-gray-800">Inbound API Keys</h3><p className="text-sm text-gray-500">Generate secure tokens to push data INTO OphirCRE.</p></div>
+                <button onClick={generateApiKey} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md font-bold transition shadow-sm">+ Generate New Key</button>
+              </div>
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-white"><tr><th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Integration Name</th><th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">API Key (Hidden)</th><th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase">Action</th></tr></thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {apiKeys.map(key => (<tr key={key.id} className="hover:bg-gray-50"><td className="px-6 py-4 text-sm font-bold text-gray-900">{key.name}</td><td className="px-6 py-4 text-sm font-mono text-gray-500">sk_live_••••••••••••••••</td><td className="px-6 py-4 text-right"><button onClick={() => revokeApiKey(key.id)} className="text-red-500 text-xs font-bold hover:underline">Revoke</button></td></tr>))}
                 </tbody>
               </table>
             </div>
           </div>
         )}
 
+        {/* Accounts and Team tabs remain exactly the same... */}
         {activeTab === 'accounts' && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 max-w-3xl">
             <h3 className="font-bold text-gray-800 mb-4">Chart of Accounts Manager</h3>

@@ -112,10 +112,19 @@ export default function FinancialsPage() {
 
   async function saveTransaction() {
     if (!isBalanced) return alert("Splits must equal total amount!");
-    const { data: txnData } = await supabase.from('transactions').insert([{ date, description, total_amount: Number(totalAmount), status: 'Approved' }]).select().single();
-    const journalEntries = splits.map(split => ({ transaction_id: txnData?.id, account_id: split.account_id, property_id: split.property_id || null, description: split.memo || description, debit: Number(split.amount), credit: 0 }));
-    await supabase.from('journal_entries').insert(journalEntries);
-    setIsModalOpen(false); setDate(''); setDescription(''); setTotalAmount(''); setSplits([{ account_id: '', property_id: '', amount: '', memo: '' }]); fetchData();
+    try {
+      const { data: txnData } = await supabase.from('transactions').insert([{ date, description, total_amount: Number(totalAmount), status: 'Approved', organization_id: orgId }]).select().single();
+      const journalEntries = splits.map(split => ({ transaction_id: txnData?.id, account_id: split.account_id, property_id: split.property_id || null, description: split.memo || description, debit: Number(split.amount), credit: 0, organization_id: orgId }));
+      await supabase.from('journal_entries').insert(journalEntries);
+      
+      // NEW: Push to QuickBooks in the background!
+      fetch('/api/qbo-sync', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId, description, amount: totalAmount, isRevenue: false })
+      }).catch(e => console.error("QBO Sync failed", e));
+
+      setIsModalOpen(false); setDate(''); setDescription(''); setTotalAmount(''); setSplits([{ account_id: '', property_id: '', amount: '', memo: '' }]); fetchData();
+    } catch (error: any) { alert("Error: " + error.message); }
   }
 
   // --- BULK CSV LOGIC ---

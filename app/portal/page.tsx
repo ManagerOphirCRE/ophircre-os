@@ -66,6 +66,13 @@ export default function TenantPortal() {
     setIsSigning(true);
     try {
       await supabase.from('leases').update({ tenant_signature: signature, signed_at: new Date().toISOString(), status: 'Active' }).eq('id', tenant.leases[0].id);
+      
+      // NEW: Fire the Zapier Webhook!
+      fetch('/api/trigger-webhook', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId: tenant.organization_id, eventType: 'lease_signed', payload: { tenantName: tenant.name, email: tenant.contact_email, property: tenant.leases[0].spaces?.properties?.name } })
+      }).catch(e => console.error("Webhook failed", e));
+
       alert("Lease executed!"); window.location.reload();
     } catch (error: any) { alert("Error: " + error.message); } finally { setIsSigning(false); }
   }
