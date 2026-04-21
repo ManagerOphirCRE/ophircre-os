@@ -30,6 +30,7 @@ const NAV_LINKS =[
   { name: 'Files', path: '/documents', allowed: ['admin', 'manager', 'accountant', 'assistant'] },
   { name: 'Deals', path: '/deal-analyzer', allowed: ['admin'] },
   { name: 'Investors', path: '/investors', allowed: ['admin'] },
+  { name: 'Waterfall Calculator', path: '/waterfall', allowed: ['admin'] },
   { name: 'Vault', path: '/vault', allowed: ['admin'] },
   { name: 'AI Scanner', path: '/ai-scanner', allowed: ['admin', 'manager', 'accountant'] },
   { name: 'AI Auditor', path: '/ai-auditor', allowed: ['admin', 'accountant'] },

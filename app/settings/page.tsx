@@ -204,6 +204,15 @@ export default function SettingsPage() {
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex justify-between items-center">
               <div><h3 className="font-bold text-gray-800">Public API Keys</h3><p className="text-sm text-gray-500 mt-1">Generate secure tokens to connect OphirCRE to Zapier.</p></div>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex justify-between items-center mt-6">
+              <div>
+                <h3 className="font-bold text-gray-800 flex items-center"><span className="text-green-600 mr-2 text-xl">qb</span> QuickBooks Online</h3>
+                <p className="text-sm text-gray-500 mt-1">Connect your QBO account to automatically sync Journal Entries.</p>
+              </div>
+              <button onClick={() => window.location.href = `/api/qbo-auth?orgId=${orgId}`} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-md font-bold transition shadow-sm">
+                Connect QuickBooks
+              </button>
+            </div>
               <button onClick={generateApiKey} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md font-bold transition shadow-sm">+ Generate New Key</button>
             </div>
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
