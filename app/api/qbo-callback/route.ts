@@ -10,7 +10,6 @@ export async function GET(req: Request) {
     const orgId = url.searchParams.get('state');
     const realmId = url.searchParams.get('realmId');
 
-    // FIX: Added || '' to guarantee it is always a string
     const oauthClient = new OAuthClient({
       clientId: process.env.QBO_CLIENT_ID || '',
       clientSecret: process.env.QBO_CLIENT_SECRET || '',
@@ -19,7 +18,9 @@ export async function GET(req: Request) {
     });
 
     const authResponse = await oauthClient.createToken(req.url);
-    const tokens = authResponse.getJson();
+    
+    // FIX: Added (authResponse as any) to bypass TypeScript strictness
+    const tokens = (authResponse as any).getJson();
 
     if (orgId && orgId !== 'missing_org' && realmId) {
       await supabase.from('qbo_tokens').upsert({

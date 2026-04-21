@@ -9,20 +9,17 @@ export async function POST(req: Request) {
     const { orgId, description, amount, isRevenue } = await req.json();
     if (!orgId) throw new Error("Missing orgId");
 
-    // 1. Get the QuickBooks Token for this specific SaaS customer
     const { data: token } = await supabase.from('qbo_tokens').select('*').eq('organization_id', orgId).single();
     if (!token) throw new Error("QuickBooks not connected for this organization.");
 
-    // 2. Initialize the Intuit Client
     const oauthClient = new OAuthClient({
       clientId: process.env.QBO_CLIENT_ID || 'dummy',
       clientSecret: process.env.QBO_CLIENT_SECRET || 'dummy',
-      environment: 'sandbox', // Change to 'production' when live
+      environment: 'sandbox', 
       redirectUri: 'https://app.ophircre.com/api/qbo-callback'
     });
     oauthClient.setToken(token);
 
-    // 3. Format the payload for QuickBooks Online JournalEntry API
     const qboPayload = {
       "Line":[
         {
@@ -32,13 +29,12 @@ export async function POST(req: Request) {
           "DetailType": "JournalEntryLineDetail",
           "JournalEntryLineDetail": {
             "PostingType": isRevenue ? "Credit" : "Debit",
-            "AccountRef": { "value": "1" } // In production, this maps to the specific QBO Account ID
+            "AccountRef": { "value": "1" } 
           }
         }
       ]
     };
 
-    // 4. Push to QuickBooks
     const url = oauthClient.environment === 'sandbox' 
       ? `https://sandbox-quickbooks.api.intuit.com/v3/company/${token.realm_id}/journalentry`
       : `https://quickbooks.api.intuit.com/v3/company/${token.realm_id}/journalentry`;
@@ -50,7 +46,8 @@ export async function POST(req: Request) {
       body: JSON.stringify(qboPayload)
     });
 
-    return NextResponse.json({ success: true, qbo_response: response.getJson() });
+    // FIX: Added (response as any) to bypass TypeScript strictness
+    return NextResponse.json({ success: true, qbo_response: (response as any).json || (response as any).getJson() });
   } catch (error: any) {
     console.error("QBO Sync Error:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
