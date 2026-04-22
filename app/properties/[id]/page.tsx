@@ -11,67 +11,78 @@ const iconSpace = L.divIcon({ className: 'custom-icon', html: `<div style="backg
 const iconAsset = L.divIcon({ className: 'custom-icon', html: `<div style="background-color:#f97316; width:20px; height:20px; border-radius:50%; border:2px solid white;"></div>`, iconSize: [20, 20] });
 
 export default function PropertyProfilePage() {
-  const params = useParams(); const propertyId = params?.id as string;
-  const router = useRouter(); const { orgId } = useContext(OrgContext);
+  const params = useParams(); 
+  const propertyId = params?.id as string;
+  const router = useRouter(); 
+  const { orgId } = useContext(OrgContext);
 
-  const [property, setProperty] = useState<any>(null);
+  const[property, setProperty] = useState<any>(null);
   const [spaces, setSpaces] = useState<any[]>([]);
-  const[assets, setAssets] = useState<any[]>([]);
-  const [isSaving, setIsSaving] = useState(false);
+  const [assets, setAssets] = useState<any[]>([]);
+  const[isSaving, setIsSaving] = useState(false);
   const [isSelling, setIsSelling] = useState(false);
-  const[activeTab, setActiveTab] = useState('details');
+  const [activeTab, setActiveTab] = useState('details');
 
-  const [name, setName] = useState(''); const [address, setAddress] = useState(''); const[sqft, setSqft] = useState('');
-  const [lat, setLat] = useState<number | null>(null); const [lng, setLng] = useState<number | null>(null);
-  const[landlordName, setLandlordName] = useState(''); const[landlordEmail, setLandlordEmail] = useState('');
-  const [landlordPhone, setLandlordPhone] = useState(''); const[landlordAddress, setLandlordAddress] = useState('');
-  const [purchasePrice, setPurchasePrice] = useState(''); const[currentValue, setCurrentValue] = useState('');
-  const[mortgageBalance, setMortgageBalance] = useState(''); const[interestRate, setInterestRate] = useState('');
+  const [name, setName] = useState(''); const [address, setAddress] = useState(''); const [sqft, setSqft] = useState('');
+  const[lat, setLat] = useState<number | null>(null); const [lng, setLng] = useState<number | null>(null);
+  const [landlordName, setLandlordName] = useState(''); const[landlordEmail, setLandlordEmail] = useState('');
+  const [landlordPhone, setLandlordPhone] = useState(''); const [landlordAddress, setLandlordAddress] = useState('');
+  const[purchasePrice, setPurchasePrice] = useState(''); const [currentValue, setCurrentValue] = useState('');
+  const[mortgageBalance, setMortgageBalance] = useState(''); const [interestRate, setInterestRate] = useState('');
 
   const [suggestions, setSuggestions] = useState<any[]>([]);
-  const[newSpaceName, setNewSpaceName] = useState(''); const [newSpaceSqft, setNewSpaceSqft] = useState(''); const[newSpaceType, setNewSpaceType] = useState('physical');
+  const [newSpaceName, setNewSpaceName] = useState(''); const[newSpaceSqft, setNewSpaceSqft] = useState(''); const [newSpaceType, setNewSpaceType] = useState('physical');
 
-  // NEW: Robust Loading States
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState('');
 
   useEffect(() => {
-    let isMounted = true;
+    if (!propertyId) return;
 
     async function fetchPropertyData() {
-      if (!propertyId) return;
       setIsLoading(true);
       setFetchError('');
 
       try {
-        const { data: pData, error: pErr } = await supabase.from('properties').select('*').eq('id', propertyId).maybeSingle();
-        if (pErr) throw pErr;
-        if (!pData) throw new Error("Property not found. It may have been deleted or blocked by security rules.");
+        // 1. Fetch Property
+        const { data: pData, error: pErr } = await supabase.from('properties').select('*').eq('id', propertyId).single();
         
-        if (isMounted) {
-          setProperty(pData); setName(pData.name || ''); setAddress(pData.address || ''); setSqft(pData.total_sqft || '');
-          setLat(pData.lat || null); setLng(pData.lng || null);
-          setLandlordName(pData.landlord_entity_name || ''); setLandlordEmail(pData.landlord_email || '');
-          setLandlordPhone(pData.landlord_phone || ''); setLandlordAddress(pData.landlord_address || '');
-          setPurchasePrice(pData.purchase_price || ''); setCurrentValue(pData.current_value || '');
-          setMortgageBalance(pData.mortgage_balance || ''); setInterestRate(pData.interest_rate || '');
+        if (pErr) {
+          setFetchError(pErr.message);
+        } else if (pData) {
+          setProperty(pData); 
+          setName(pData.name || ''); 
+          setAddress(pData.address || ''); 
+          setSqft(pData.total_sqft || '');
+          setLat(pData.lat || null); 
+          setLng(pData.lng || null);
+          setLandlordName(pData.landlord_entity_name || ''); 
+          setLandlordEmail(pData.landlord_email || '');
+          setLandlordPhone(pData.landlord_phone || ''); 
+          setLandlordAddress(pData.landlord_address || '');
+          setPurchasePrice(pData.purchase_price || ''); 
+          setCurrentValue(pData.current_value || '');
+          setMortgageBalance(pData.mortgage_balance || ''); 
+          setInterestRate(pData.interest_rate || '');
         }
 
+        // 2. Fetch Spaces
         const { data: sData } = await supabase.from('spaces').select('*, leases(tenant_id, tenants(name))').eq('property_id', propertyId).order('name');
-        if (sData && isMounted) setSpaces(sData);
+        if (sData) setSpaces(sData);
         
+        // 3. Fetch Assets
         const { data: aData } = await supabase.from('property_assets').select('*').eq('property_id', propertyId);
-        if (aData && isMounted) setAssets(aData);
+        if (aData) setAssets(aData);
 
       } catch (error: any) {
-        if (isMounted) setFetchError(error.message);
+        setFetchError(error.message);
       } finally {
-        if (isMounted) setIsLoading(false);
+        setIsLoading(false);
       }
     }
+    
     fetchPropertyData();
-    return () => { isMounted = false; };
-  },[propertyId]);
+  }, [propertyId]);
 
   async function handleAddressSearch(query: string) {
     setAddress(query);
@@ -102,7 +113,7 @@ export default function PropertyProfilePage() {
   }
 
   async function sellProperty() {
-    if (!confirm(`WARNING: Are you sure you want to mark ${property.name} as SOLD?\n\nThis will permanently terminate all active leases in this building, mark the tenants as 'Past', and archive the property so the Auto-Biller stops charging them.`)) return;
+    if (!confirm(`WARNING: Are you sure you want to mark ${property?.name} as SOLD?\n\nThis will permanently terminate all active leases in this building, mark the tenants as 'Past', and archive the property so the Auto-Biller stops charging them.`)) return;
     setIsSelling(true);
 
     try {
@@ -164,7 +175,6 @@ export default function PropertyProfilePage() {
     return null;
   }
 
-  // DIAGNOSTIC RENDERING
   if (isLoading) return <div className="p-8 text-gray-500 font-bold">Loading Property Profile...</div>;
   
   if (fetchError) return (
