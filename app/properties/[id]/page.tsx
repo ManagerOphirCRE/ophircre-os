@@ -4,7 +4,6 @@ import { supabase } from '@/app/utils/supabase';
 import { useParams, useRouter } from 'next/navigation';
 import { OrgContext } from '@/app/context/OrgContext';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
-import MarkerClusterGroup from 'react-leaflet-cluster';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -13,14 +12,14 @@ const iconAsset = L.divIcon({ className: 'custom-icon', html: `<div style="backg
 
 export default function PropertyProfilePage() {
   const params = useParams(); 
-  const propertyId = params?.id as string;
+  const propertyId = Array.isArray(params?.id) ? params.id[0] : params?.id;
   const router = useRouter(); 
   const { orgId } = useContext(OrgContext);
 
   const [property, setProperty] = useState<any>(null);
   const [spaces, setSpaces] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
-  const [isSaving, setIsSaving] = useState(false);
+  const[isSaving, setIsSaving] = useState(false);
   const [isSelling, setIsSelling] = useState(false);
   const [activeTab, setActiveTab] = useState('details');
 
@@ -41,8 +40,7 @@ export default function PropertyProfilePage() {
     let isMounted = true;
 
     async function fetchPropertyData() {
-      // CRITICAL FIX: Wait for the Org ID to load before fetching!
-      if (!propertyId || !orgId) return; 
+      if (!propertyId) return; 
       
       setIsLoading(true);
       setFetchError('');
@@ -76,7 +74,7 @@ export default function PropertyProfilePage() {
     
     fetchPropertyData();
     return () => { isMounted = false; };
-  },[propertyId, orgId]);
+  }, [propertyId]); // FIX: Removed orgId from dependencies so it doesn't block the page load!
 
   async function handleAddressSearch(query: string) {
     setAddress(query);
@@ -120,7 +118,7 @@ export default function PropertyProfilePage() {
       }
 
       await supabase.from('properties').update({ is_deleted: true }).eq('id', propertyId);
-      alert("Property successfully marked as Sold.");
+      alert("Property successfully marked as Sold. All leases have been terminated and tenants archived.");
       router.push('/properties');
     } catch (error: any) {
       alert("Disposition Error: " + error.message);
