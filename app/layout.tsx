@@ -43,6 +43,7 @@ const NAV_LINKS =[
   { name: 'Payables', path: '/accounts-payable', allowed:['admin', 'accountant'] },
   { name: '1099 Ledger', path: '/vendor-ledger', allowed: ['admin', 'accountant'] },
   { name: 'Settings', path: '/settings', allowed:['admin'] },
+  { name: '🗑️ Trash Bin', path: '/trash', allowed: ['admin'] },
   { name: '👑 Super Admin', path: '/super-admin', allowed:['super_admin'] }
 ];
 
