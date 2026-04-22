@@ -7,7 +7,6 @@ import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaf
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
-// Fix Leaflet icons
 const iconSpace = L.divIcon({ className: 'custom-icon', html: `<div style="background-color:#3b82f6; width:20px; height:20px; border-radius:50%; border:2px solid white;"></div>`, iconSize: [20, 20] });
 const iconAsset = L.divIcon({ className: 'custom-icon', html: `<div style="background-color:#f97316; width:20px; height:20px; border-radius:50%; border:2px solid white;"></div>`, iconSize: [20, 20] });
 
@@ -19,20 +18,16 @@ export default function PropertyProfilePage() {
   const [spaces, setSpaces] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('details'); // 'details', 'siteplan', 'financials'
+  const [activeTab, setActiveTab] = useState('details');
 
-  // Property Form State
-  const[name, setName] = useState(''); const [address, setAddress] = useState(''); const [sqft, setSqft] = useState('');
-  const[lat, setLat] = useState<number | null>(null); const [lng, setLng] = useState<number | null>(null);
-  const [landlordName, setLandlordName] = useState(''); const[landlordEmail, setLandlordEmail] = useState('');
-  const [landlordPhone, setLandlordPhone] = useState(''); const[landlordAddress, setLandlordAddress] = useState('');
-  const [purchasePrice, setPurchasePrice] = useState(''); const[currentValue, setCurrentValue] = useState('');
-  const [mortgageBalance, setMortgageBalance] = useState(''); const[interestRate, setInterestRate] = useState('');
+  const[name, setName] = useState(''); const [address, setAddress] = useState(''); const[sqft, setSqft] = useState('');
+  const[lat, setLat] = useState<number | null>(null); const[lng, setLng] = useState<number | null>(null);
+  const[landlordName, setLandlordName] = useState(''); const[landlordEmail, setLandlordEmail] = useState('');
+  const[landlordPhone, setLandlordPhone] = useState(''); const[landlordAddress, setLandlordAddress] = useState('');
+  const[purchasePrice, setPurchasePrice] = useState(''); const[currentValue, setCurrentValue] = useState('');
+  const[mortgageBalance, setMortgageBalance] = useState(''); const[interestRate, setInterestRate] = useState('');
 
-  // Autocomplete State
   const [suggestions, setSuggestions] = useState<any[]>([]);
-
-  // New Space/Asset State
   const [newSpaceName, setNewSpaceName] = useState(''); const [newSpaceSqft, setNewSpaceSqft] = useState(''); const[newSpaceType, setNewSpaceType] = useState('physical');
 
   useEffect(() => {
@@ -55,12 +50,12 @@ export default function PropertyProfilePage() {
     fetchPropertyData();
   }, [propertyId]);
 
-  // --- ADDRESS AUTOCOMPLETE ENGINE ---
+  // FIX: Restricted search to US only and limited results to 5
   async function handleAddressSearch(query: string) {
     setAddress(query);
     if (query.length < 5) return setSuggestions([]);
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=us&limit=5`);
       const data = await res.json();
       setSuggestions(data);
     } catch (e) { console.error(e); }
@@ -101,26 +96,19 @@ export default function PropertyProfilePage() {
     if (data) setSpaces(data);
   }
 
-  // --- INTERACTIVE SITE PLAN ENGINE ---
   function MapClickHandler() {
     useMapEvents({
       click: async (e) => {
         const type = prompt("Drop a pin here!\nType '1' for a Space/Tenant (e.g. Food Truck).\nType '2' for an Asset (e.g. Dumpster/Meter).");
         if (!type) return;
-
         if (type === '1') {
           const spaceName = prompt("Enter Space/Licensee Name:");
-          if (spaceName) {
-            await supabase.from('spaces').insert([{ property_id: propertyId, name: spaceName, space_type: 'virtual', lat: e.latlng.lat, lng: e.latlng.lng }]);
-          }
+          if (spaceName) await supabase.from('spaces').insert([{ property_id: propertyId, name: spaceName, space_type: 'virtual', lat: e.latlng.lat, lng: e.latlng.lng }]);
         } else if (type === '2') {
           const assetName = prompt("Enter Asset Name (e.g. Main Dumpster):");
           const assetType = prompt("Enter Asset Type (Dumpster, Meter, Light, HVAC):", "Dumpster");
-          if (assetName && assetType) {
-            await supabase.from('property_assets').insert([{ property_id: propertyId, name: assetName, asset_type: assetType, lat: e.latlng.lat, lng: e.latlng.lng }]);
-          }
+          if (assetName && assetType) await supabase.from('property_assets').insert([{ property_id: propertyId, name: assetName, asset_type: assetType, lat: e.latlng.lat, lng: e.latlng.lng }]);
         }
-        // Refresh Data
         const { data: sData } = await supabase.from('spaces').select('*, leases(tenants(name))').eq('property_id', propertyId).order('name');
         if (sData) setSpaces(sData);
         const { data: aData } = await supabase.from('property_assets').select('*').eq('property_id', propertyId);
@@ -139,11 +127,9 @@ export default function PropertyProfilePage() {
           <a href="/properties" className="text-sm text-blue-600 hover:underline mb-1 inline-block">← Back to Portfolio</a>
           <h2 className="text-2xl font-bold text-gray-800">{property.name}</h2>
         </div>
-        <div className="flex space-x-2 bg-gray-100 p-1 rounded-lg border border-gray-200">
-          <button onClick={() => setActiveTab('details')} className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'details' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Details & Units</button>
-          <button onClick={() => setActiveTab('siteplan')} className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'siteplan' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Interactive Site Plan</button>
-          <button onClick={() => setActiveTab('financials')} className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'financials' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>SREO Financials</button>
-        </div>
+        <button onClick={savePropertyDetails} disabled={isSaving} className={`px-6 py-2 rounded-md font-bold text-white transition shadow-sm ${isSaving ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'}`}>
+          {isSaving ? 'Saving...' : 'Save Changes'}
+        </button>
       </header>
 
       <main className="flex-1 overflow-y-auto p-8 bg-gray-100 relative">
@@ -156,7 +142,6 @@ export default function PropertyProfilePage() {
                 <div className="space-y-4">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1">Property Name</label><input type="text" className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={name} onChange={(e) => setName(e.target.value)} /></div>
                   
-                  {/* AUTOCOMPLETE ADDRESS FIELD */}
                   <div className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Address (Autocomplete)</label>
                     <input type="text" className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={address} onChange={(e) => handleAddressSearch(e.target.value)} />
@@ -169,7 +154,15 @@ export default function PropertyProfilePage() {
                     )}
                   </div>
 
-                  {lat && lng && <div className="text-xs text-green-600 font-bold bg-green-50 p-2 rounded">✓ GPS Coordinates Locked: {lat.toFixed(4)}, {lng.toFixed(4)}</div>}
+                  {/* FIX: Manual GPS Override */}
+                  <div className="bg-gray-50 p-3 rounded border border-gray-200">
+                    <label className="block text-xs font-bold text-gray-700 mb-2">GPS Coordinates (Auto-filled or Manual Override)</label>
+                    <div className="flex space-x-2">
+                      <input type="number" step="any" placeholder="Latitude" className="w-1/2 border p-2 rounded text-sm outline-none" value={lat || ''} onChange={(e) => setLat(Number(e.target.value))} />
+                      <input type="number" step="any" placeholder="Longitude" className="w-1/2 border p-2 rounded text-sm outline-none" value={lng || ''} onChange={(e) => setLng(Number(e.target.value))} />
+                    </div>
+                    <p className="text-[10px] text-gray-500 mt-1">If autocomplete fails, right-click your building on Google Maps, copy the numbers, and paste them here.</p>
+                  </div>
                   
                   <div><label className="block text-sm font-medium text-gray-700 mb-1">Total Square Footage</label><input type="number" className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={sqft} onChange={(e) => setSqft(e.target.value)} /></div>
                 </div>
@@ -220,65 +213,36 @@ export default function PropertyProfilePage() {
           </div>
         )}
 
-        {/* NEW: INTERACTIVE SITE PLAN (DIGITAL TWIN) */}
         {activeTab === 'siteplan' && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-[700px] flex flex-col">
             <div className="p-4 bg-slate-900 text-white flex justify-between items-center">
-              <div>
-                <h3 className="font-bold">Interactive Site Plan</h3>
-                <p className="text-xs text-slate-400">Click anywhere on the map to drop a pin for a Food Truck, Antenna, or Dumpster.</p>
-              </div>
-              <div className="flex space-x-4 text-xs font-bold">
-                <span className="flex items-center"><span className="w-3 h-3 bg-blue-500 rounded-full mr-2 border border-white"></span> Tenants/Spaces</span>
-                <span className="flex items-center"><span className="w-3 h-3 bg-orange-500 rounded-full mr-2 border border-white"></span> Physical Assets</span>
-              </div>
+              <div><h3 className="font-bold">Interactive Site Plan</h3><p className="text-xs text-slate-400">Click anywhere on the map to drop a pin for a Food Truck, Antenna, or Dumpster.</p></div>
+              <div className="flex space-x-4 text-xs font-bold"><span className="flex items-center"><span className="w-3 h-3 bg-blue-500 rounded-full mr-2 border border-white"></span> Tenants/Spaces</span><span className="flex items-center"><span className="w-3 h-3 bg-orange-500 rounded-full mr-2 border border-white"></span> Physical Assets</span></div>
             </div>
-            
             <div className="flex-1 relative z-0">
               {lat && lng ? (
                 <MapContainer center={[lat, lng]} zoom={19} scrollWheelZoom={true} style={{ height: '100%', width: '100%', zIndex: 0 }}>
-                  {/* Using Esri World Imagery for high-res satellite view to see neighboring businesses! */}
                   <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution="Tiles &copy; Esri" />
                   <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
-                  
                   <MapClickHandler />
-
-                  {/* Render Spaces (Tenants/Food Trucks) */}
                   {spaces.filter(s => s.lat && s.lng).map(s => (
                     <Marker key={s.id} position={[s.lat, s.lng]} icon={iconSpace}>
-                      <Popup>
-                        <div className="text-center">
-                          <strong className="text-blue-600 block">{s.name}</strong>
-                          <span className="text-xs text-gray-500 block">{s.space_type}</span>
-                          {s.leases?.[0] && <span className="mt-1 bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold block">Leased to: {s.leases[0].tenants?.name}</span>}
-                        </div>
-                      </Popup>
+                      <Popup><div className="text-center"><strong className="text-blue-600 block">{s.name}</strong><span className="text-xs text-gray-500 block">{s.space_type}</span>{s.leases?.[0] && <span className="mt-1 bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold block">Leased to: {s.leases[0].tenants?.name}</span>}</div></Popup>
                     </Marker>
                   ))}
-
-                  {/* Render Assets (Dumpsters/Meters) */}
                   {assets.filter(a => a.lat && a.lng).map(a => (
                     <Marker key={a.id} position={[a.lat, a.lng]} icon={iconAsset}>
-                      <Popup>
-                        <div className="text-center">
-                          <strong className="text-orange-600 block">{a.name}</strong>
-                          <span className="text-xs text-gray-500 block">{a.asset_type}</span>
-                        </div>
-                      </Popup>
+                      <Popup><div className="text-center"><strong className="text-orange-600 block">{a.name}</strong><span className="text-xs text-gray-500 block">{a.asset_type}</span></div></Popup>
                     </Marker>
                   ))}
                 </MapContainer>
               ) : (
-                <div className="h-full flex flex-col items-center justify-center bg-gray-50">
-                  <div className="text-4xl mb-4">📍</div>
-                  <p className="text-gray-500 font-medium">Please use the Address Autocomplete in the Details tab to set the GPS coordinates for this property first!</p>
-                </div>
+                <div className="h-full flex flex-col items-center justify-center bg-gray-50"><div className="text-4xl mb-4">📍</div><p className="text-gray-500 font-medium">Please use the Address Autocomplete in the Details tab to set the GPS coordinates for this property first!</p></div>
               )}
             </div>
           </div>
         )}
 
-        {/* Financials Tab remains below... */}
         {activeTab === 'financials' && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-fit max-w-2xl mx-auto">
             <h3 className="font-bold text-gray-800 border-b pb-2 mb-4">Financials & Valuation (SREO)</h3>
@@ -293,7 +257,6 @@ export default function PropertyProfilePage() {
             </div>
           </div>
         )}
-
       </main>
     </>
   )
