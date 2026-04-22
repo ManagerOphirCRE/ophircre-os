@@ -4,6 +4,7 @@ import { supabase } from '@/app/utils/supabase';
 import { useParams, useRouter } from 'next/navigation';
 import { OrgContext } from '@/app/context/OrgContext';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -16,73 +17,66 @@ export default function PropertyProfilePage() {
   const router = useRouter(); 
   const { orgId } = useContext(OrgContext);
 
-  const[property, setProperty] = useState<any>(null);
+  const [property, setProperty] = useState<any>(null);
   const [spaces, setSpaces] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
-  const[isSaving, setIsSaving] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [isSelling, setIsSelling] = useState(false);
   const [activeTab, setActiveTab] = useState('details');
 
   const [name, setName] = useState(''); const [address, setAddress] = useState(''); const [sqft, setSqft] = useState('');
-  const[lat, setLat] = useState<number | null>(null); const [lng, setLng] = useState<number | null>(null);
+  const [lat, setLat] = useState<number | null>(null); const [lng, setLng] = useState<number | null>(null);
   const [landlordName, setLandlordName] = useState(''); const[landlordEmail, setLandlordEmail] = useState('');
   const [landlordPhone, setLandlordPhone] = useState(''); const [landlordAddress, setLandlordAddress] = useState('');
-  const[purchasePrice, setPurchasePrice] = useState(''); const [currentValue, setCurrentValue] = useState('');
+  const [purchasePrice, setPurchasePrice] = useState(''); const [currentValue, setCurrentValue] = useState('');
   const[mortgageBalance, setMortgageBalance] = useState(''); const [interestRate, setInterestRate] = useState('');
 
   const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [newSpaceName, setNewSpaceName] = useState(''); const[newSpaceSqft, setNewSpaceSqft] = useState(''); const [newSpaceType, setNewSpaceType] = useState('physical');
+  const [newSpaceName, setNewSpaceName] = useState(''); const [newSpaceSqft, setNewSpaceSqft] = useState(''); const [newSpaceType, setNewSpaceType] = useState('physical');
 
-  const [isLoading, setIsLoading] = useState(true);
+  const[isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState('');
 
   useEffect(() => {
-    if (!propertyId) return;
+    let isMounted = true;
 
     async function fetchPropertyData() {
+      // CRITICAL FIX: Wait for the Org ID to load before fetching!
+      if (!propertyId || !orgId) return; 
+      
       setIsLoading(true);
       setFetchError('');
 
       try {
-        // 1. Fetch Property
-        const { data: pData, error: pErr } = await supabase.from('properties').select('*').eq('id', propertyId).single();
+        const { data: pData, error: pErr } = await supabase.from('properties').select('*').eq('id', propertyId).maybeSingle();
+        if (pErr) throw pErr;
+        if (!pData) throw new Error("Property not found. It may have been deleted or blocked by security rules.");
         
-        if (pErr) {
-          setFetchError(pErr.message);
-        } else if (pData) {
-          setProperty(pData); 
-          setName(pData.name || ''); 
-          setAddress(pData.address || ''); 
-          setSqft(pData.total_sqft || '');
-          setLat(pData.lat || null); 
-          setLng(pData.lng || null);
-          setLandlordName(pData.landlord_entity_name || ''); 
-          setLandlordEmail(pData.landlord_email || '');
-          setLandlordPhone(pData.landlord_phone || ''); 
-          setLandlordAddress(pData.landlord_address || '');
-          setPurchasePrice(pData.purchase_price || ''); 
-          setCurrentValue(pData.current_value || '');
-          setMortgageBalance(pData.mortgage_balance || ''); 
-          setInterestRate(pData.interest_rate || '');
+        if (isMounted) {
+          setProperty(pData); setName(pData.name || ''); setAddress(pData.address || ''); setSqft(pData.total_sqft || '');
+          setLat(pData.lat || null); setLng(pData.lng || null);
+          setLandlordName(pData.landlord_entity_name || ''); setLandlordEmail(pData.landlord_email || '');
+          setLandlordPhone(pData.landlord_phone || ''); setLandlordAddress(pData.landlord_address || '');
+          setPurchasePrice(pData.purchase_price || ''); setCurrentValue(pData.current_value || '');
+          setMortgageBalance(pData.mortgage_balance || ''); setInterestRate(pData.interest_rate || '');
         }
 
-        // 2. Fetch Spaces
         const { data: sData } = await supabase.from('spaces').select('*, leases(tenant_id, tenants(name))').eq('property_id', propertyId).order('name');
-        if (sData) setSpaces(sData);
+        if (sData && isMounted) setSpaces(sData);
         
-        // 3. Fetch Assets
         const { data: aData } = await supabase.from('property_assets').select('*').eq('property_id', propertyId);
-        if (aData) setAssets(aData);
+        if (aData && isMounted) setAssets(aData);
 
       } catch (error: any) {
-        setFetchError(error.message);
+        if (isMounted) setFetchError(error.message);
       } finally {
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
       }
     }
     
     fetchPropertyData();
-  }, [propertyId]);
+    return () => { isMounted = false; };
+  },[propertyId, orgId]);
 
   async function handleAddressSearch(query: string) {
     setAddress(query);
@@ -95,9 +89,7 @@ export default function PropertyProfilePage() {
   }
 
   function selectAddress(item: any) {
-    setAddress(item.display_name);
-    setLat(Number(item.lat)); setLng(Number(item.lon));
-    setSuggestions([]);
+    setAddress(item.display_name); setLat(Number(item.lat)); setLng(Number(item.lon)); setSuggestions([]);
   }
 
   async function savePropertyDetails() {
@@ -128,7 +120,7 @@ export default function PropertyProfilePage() {
       }
 
       await supabase.from('properties').update({ is_deleted: true }).eq('id', propertyId);
-      alert("Property successfully marked as Sold. All leases have been terminated and tenants archived.");
+      alert("Property successfully marked as Sold.");
       router.push('/properties');
     } catch (error: any) {
       alert("Disposition Error: " + error.message);
