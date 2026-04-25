@@ -7,47 +7,45 @@ export default function TenantProfilePage() {
   const params = useParams(); 
   const tenantId = params?.id as string;
 
-  const [tenant, setTenant] = useState<any>(null); 
+  const[tenant, setTenant] = useState<any>(null); 
   const [lease, setLease] = useState<any>(null);
-  const[isSaving, setIsSaving] = useState(false); 
-  const [isExecuting, setIsExecuting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false); 
+  const[isExecuting, setIsExecuting] = useState(false);
   const [activeTab, setActiveTab] = useState('lease');
   
-  const[invoices, setInvoices] = useState<any[]>([]); 
-  const [comms, setComps] = useState<any[]>([]); 
+  const [invoices, setInvoices] = useState<any[]>([]); 
+  const[comms, setComps] = useState<any[]>([]); 
   const [tasks, setTasks] = useState<any[]>([]);
 
-  const[coiDate, setCoiDate] = useState(''); 
+  const [coiDate, setCoiDate] = useState(''); 
   const [baseRent, setBaseRent] = useState(0);
   const [camCharge, setCamCharge] = useState(0); 
-  const[taxCharge, setTaxCharge] = useState(0); 
-  const [insCharge, setInsCharge] = useState(0);
+  const [taxCharge, setTaxCharge] = useState(0); 
+  const[insCharge, setInsCharge] = useState(0);
   
   const [escalationDate, setEscalationDate] = useState(''); 
   const[escalationType, setEscalationType] = useState('percentage');
-  const [escalationPct, setEscalationPct] = useState(0); 
-  const [escalationFixed, setEscalationFixed] = useState(0);
+  const[escalationPct, setEscalationPct] = useState(0); 
+  const[escalationFixed, setEscalationFixed] = useState(0);
 
   const [gracePeriod, setGracePeriod] = useState(5);
-  const[lateFeeType, setLateFeeType] = useState('percentage');
-  const [lateFeeAmount, setLateFeeAmount] = useState(5.0);
+  const [lateFeeType, setLateFeeType] = useState('percentage');
+  const[lateFeeAmount, setLateFeeAmount] = useState(5.0);
 
-  // NEW: Critical Dates State
-  const [rofrDate, setRofrDate] = useState('');
-  const [expansionDate, setExpansionDate] = useState('');
-  const[terminationDate, setTerminationDate] = useState('');
+  // NEW: Co-Tenant / Split Billing State
+  const[coTenants, setCoTenants] = useState<any[]>([]);
 
-  const [isEscalationModalOpen, setIsEscalationModalOpen] = useState(false);
+  const[isEscalationModalOpen, setIsEscalationModalOpen] = useState(false);
   const[suggestedNewRent, setSuggestedNewRent] = useState('');
-  const[escalationEmailBody, setEscalationEmailBody] = useState('');
+  const [escalationEmailBody, setEscalationEmailBody] = useState('');
 
   const [leaseQuestion, setLeaseQuestion] = useState('');
   const [leaseAnswer, setLeaseAnswer] = useState('');
   const [isAsking, setIsAsking] = useState(false);
-  const [isOnboarding, setIsOnboarding] = useState(false);
+  const[isOnboarding, setIsOnboarding] = useState(false);
 
   const [isLoading, setIsLoading] = useState(true);
-  const [fetchError, setFetchError] = useState('');
+  const[fetchError, setFetchError] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -73,13 +71,11 @@ export default function TenantProfilePage() {
           setEscalationPct(lData.escalation_percentage || 0); setEscalationFixed(lData.escalation_fixed_amount || 0);
           setGracePeriod(lData.grace_period_days || 5); setLateFeeType(lData.late_fee_type || 'percentage'); setLateFeeAmount(lData.late_fee_amount || 5.0);
           
-          // Load Critical Dates
-          setRofrDate(lData.rofr_date || '');
-          setExpansionDate(lData.expansion_option_date || '');
-          setTerminationDate(lData.termination_option_date || '');
+          // Load Co-Tenants
+          setCoTenants(lData.co_tenants || []);
         }
 
-        const [invRes, commsRes, tasksRes] = await Promise.all([
+        const[invRes, commsRes, tasksRes] = await Promise.all([
           supabase.from('tenant_invoices').select('*').eq('tenant_id', tenantId).order('due_date', { ascending: false }),
           supabase.from('communications').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }),
           supabase.from('tasks').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false })
@@ -104,17 +100,40 @@ export default function TenantProfilePage() {
     try {
       await supabase.from('tenants').update({ coi_expiration: coiDate || null }).eq('id', tenantId);
       if (lease) {
+        // Validate Co-Tenant Percentages
+        const totalPct = coTenants.reduce((sum, ct) => sum + Number(ct.split_percentage || 0), 0);
+        if (coTenants.length > 0 && totalPct !== 100) {
+          throw new Error("Co-Tenant split percentages must equal exactly 100%.");
+        }
+
         await supabase.from('leases').update({
           base_rent_amount: baseRent, cam_charge: camCharge, tax_charge: taxCharge, insurance_charge: insCharge,
           next_escalation_date: escalationDate || null, escalation_type: escalationType,
           escalation_percentage: escalationType === 'percentage' ? escalationPct : 0,
           escalation_fixed_amount: escalationType === 'fixed' ? escalationFixed : 0,
           grace_period_days: gracePeriod, late_fee_type: lateFeeType, late_fee_amount: lateFeeAmount,
-          rofr_date: rofrDate || null, expansion_option_date: expansionDate || null, termination_option_date: terminationDate || null
+          co_tenants: coTenants // Save the JSON array
         }).eq('id', lease.id);
       }
       alert("Profile and Financials Updated!");
     } catch (error: any) { alert("Error: " + error.message); } finally { setIsSaving(false); }
+  }
+
+  // --- CO-TENANT LOGIC ---
+  function addCoTenant() {
+    setCoTenants([...coTenants, { id: Math.random().toString(), name: '', email: '', split_percentage: 0 }]);
+  }
+
+  function updateCoTenant(index: number, field: string, value: string) {
+    const newCoTenants = [...coTenants];
+    newCoTenants[index] = { ...newCoTenants[index], [field]: value };
+    setCoTenants(newCoTenants);
+  }
+
+  function removeCoTenant(index: number) {
+    const newCoTenants = [...coTenants];
+    newCoTenants.splice(index, 1);
+    setCoTenants(newCoTenants);
   }
 
   async function onboardTenant() {
@@ -130,8 +149,8 @@ export default function TenantProfilePage() {
       const depositAmount = Number(lease.security_deposit || totalMonthly);
 
       const newInvoices =[
-        { tenant_id: tenant.id, lease_id: lease.id, amount: depositAmount, description: 'Security Deposit', due_date: today.toISOString().split('T')[0], status: 'Unpaid' },
-        { tenant_id: tenant.id, lease_id: lease.id, amount: proratedRent, description: `Prorated First Month Rent (${daysActive} days)`, due_date: today.toISOString().split('T')[0], status: 'Unpaid' }
+        { tenant_id: tenant.id, lease_id: lease.id, amount: depositAmount, description: 'Security Deposit', due_date: today.toISOString().split('T')[0], status: 'Unpaid', organization_id: lease.organization_id },
+        { tenant_id: tenant.id, lease_id: lease.id, amount: proratedRent, description: `Prorated First Month Rent (${daysActive} days)`, due_date: today.toISOString().split('T')[0], status: 'Unpaid', organization_id: lease.organization_id }
       ];
       await supabase.from('tenant_invoices').insert(newInvoices);
       await supabase.from('leases').update({ is_onboarded: true, security_deposit: depositAmount }).eq('id', lease.id);
@@ -139,7 +158,7 @@ export default function TenantProfilePage() {
       if (tenant.contact_email) {
         const welcomeText = `Welcome to ${lease.spaces?.properties?.name}!\n\nYour Move-In invoices have been generated:\n- Security Deposit: $${depositAmount.toFixed(2)}\n- Prorated First Month: $${proratedRent.toFixed(2)}\n\nPlease log into your secure Tenant Portal to submit payment: https://app.ophircre.com/portal-login`;
         await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: tenant.contact_email, subject: "Welcome to OphirCRE! (Action Required)", text: welcomeText }) });
-        await supabase.from('communications').insert([{ tenant_id: tenant.id, subject: 'Welcome Packet & Move-In Invoices', body: welcomeText, type: 'Email', status: 'Sent' }]);
+        await supabase.from('communications').insert([{ tenant_id: tenant.id, subject: 'Welcome Packet & Move-In Invoices', body: welcomeText, type: 'Email', status: 'Sent', organization_id: lease.organization_id }]);
       }
       alert("Tenant successfully onboarded!"); window.location.reload();
     } catch (error: any) { alert("Onboarding Error: " + error.message); } finally { setIsOnboarding(false); }
@@ -161,7 +180,7 @@ export default function TenantProfilePage() {
       await supabase.from('leases').update({ base_rent_amount: finalRent, next_escalation_date: null }).eq('id', lease.id);
       if (tenant.contact_email) {
         await fetch('/api/send-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: tenant.contact_email, subject: "Official Notice: Rent Escalation", text: escalationEmailBody }) });
-        await supabase.from('communications').insert([{ tenant_id: tenant.id, subject: 'Official Notice: Rent Escalation', body: escalationEmailBody, type: 'Email', status: 'Sent' }]);
+        await supabase.from('communications').insert([{ tenant_id: tenant.id, subject: 'Official Notice: Rent Escalation', body: escalationEmailBody, type: 'Email', status: 'Sent', organization_id: lease.organization_id }]);
       }
       alert(`Escalation Executed! Rent increased to $${finalRent.toFixed(2)}.`);
       setBaseRent(finalRent); setEscalationDate(''); setIsEscalationModalOpen(false);
@@ -228,20 +247,49 @@ export default function TenantProfilePage() {
             <div className="w-full md:w-2/3 bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-fit">
               <h3 className="font-bold text-gray-800 border-b pb-2 mb-4">Lease Financials & Rules</h3>
               {lease ? (
-                <div className="space-y-6 max-w-md">
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Monthly Charges</h4>
-                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Base Rent</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right font-bold" value={baseRent} onChange={(e) => setBaseRent(Number(e.target.value))} /></div></div>
-                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">CAM Escrow</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right" value={camCharge} onChange={(e) => setCamCharge(Number(e.target.value))} /></div></div>
-                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Tax Escrow</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right" value={taxCharge} onChange={(e) => setTaxCharge(Number(e.target.value))} /></div></div>
-                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Insurance Escrow</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right" value={insCharge} onChange={(e) => setInsCharge(Number(e.target.value))} /></div></div>
+                <div className="space-y-6 max-w-2xl">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Monthly Charges</h4>
+                      <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Base Rent</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right font-bold" value={baseRent} onChange={(e) => setBaseRent(Number(e.target.value))} /></div></div>
+                      <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">CAM Escrow</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right" value={camCharge} onChange={(e) => setCamCharge(Number(e.target.value))} /></div></div>
+                      <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Tax Escrow</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right" value={taxCharge} onChange={(e) => setTaxCharge(Number(e.target.value))} /></div></div>
+                      <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Insurance Escrow</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right" value={insCharge} onChange={(e) => setInsCharge(Number(e.target.value))} /></div></div>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Late Fee Policy</h4>
+                      <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Grace Period (Days)</label><input type="number" className="border p-2 rounded w-24 outline-none" value={gracePeriod} onChange={(e) => setGracePeriod(Number(e.target.value))} /></div>
+                      <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Fee Type</label><select className="border p-2 rounded w-32 outline-none text-sm" value={lateFeeType} onChange={(e) => setLateFeeType(e.target.value)}><option value="percentage">Percentage (%)</option><option value="fixed">Fixed Amount ($)</option></select></div>
+                      <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Penalty Amount</label><input type="number" step="0.1" className="border p-2 rounded w-24 text-right outline-none" value={lateFeeAmount} onChange={(e) => setLateFeeAmount(Number(e.target.value))} /></div>
+                    </div>
                   </div>
-                  
+
+                  {/* NEW: CO-TENANT SPLIT BILLING */}
                   <div className="space-y-3 pt-4 border-t">
-                    <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Late Fee Policy</h4>
-                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Grace Period (Days)</label><input type="number" className="border p-2 rounded w-40 outline-none" value={gracePeriod} onChange={(e) => setGracePeriod(Number(e.target.value))} /></div>
-                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Fee Type</label><select className="border p-2 rounded w-40 outline-none text-sm" value={lateFeeType} onChange={(e) => setLateFeeType(e.target.value)}><option value="percentage">Percentage (%)</option><option value="fixed">Fixed Amount ($)</option></select></div>
-                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Penalty Amount</label><input type="number" step="0.1" className="border p-2 rounded w-40 text-right outline-none" value={lateFeeAmount} onChange={(e) => setLateFeeAmount(Number(e.target.value))} /></div>
+                    <div className="flex justify-between items-center mb-2">
+                      <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Co-Tenants / Split Billing</h4>
+                      <button onClick={addCoTenant} className="text-xs text-blue-600 font-bold hover:underline">+ Add Co-Tenant</button>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-3">If added, the Auto-Biller will split the total monthly charges based on these percentages and email separate invoices.</p>
+                    
+                    {coTenants.length > 0 && (
+                      <div className="space-y-2">
+                        {coTenants.map((ct, idx) => (
+                          <div key={ct.id} className="flex space-x-2 items-center bg-gray-50 p-2 rounded border">
+                            <input type="text" placeholder="Name" className="flex-1 border p-1 rounded text-sm outline-none" value={ct.name} onChange={(e) => updateCoTenant(idx, 'name', e.target.value)} />
+                            <input type="email" placeholder="Email" className="flex-1 border p-1 rounded text-sm outline-none" value={ct.email} onChange={(e) => updateCoTenant(idx, 'email', e.target.value)} />
+                            <div className="relative w-20"><input type="number" className="w-full border p-1 pr-4 rounded text-sm outline-none text-right" value={ct.split_percentage} onChange={(e) => updateCoTenant(idx, 'split_percentage', e.target.value)} /><span className="absolute right-1 top-1 text-xs text-gray-500">%</span></div>
+                            <button onClick={() => removeCoTenant(idx)} className="text-red-500 font-bold px-2">&times;</button>
+                          </div>
+                        ))}
+                        <div className="text-right text-xs font-bold mt-2">
+                          Total Split: <span className={coTenants.reduce((sum, ct) => sum + Number(ct.split_percentage || 0), 0) === 100 ? 'text-green-600' : 'text-red-600'}>
+                            {coTenants.reduce((sum, ct) => sum + Number(ct.split_percentage || 0), 0)}%
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-3 pt-4 border-t">
@@ -251,16 +299,6 @@ export default function TenantProfilePage() {
                     {escalationType === 'percentage' ? <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Increase By</label><div className="relative"><input type="number" step="0.1" className="border p-2 pr-6 rounded w-32 text-right outline-none" value={escalationPct} onChange={(e) => setEscalationPct(Number(e.target.value))} /><span className="absolute right-3 top-2 text-gray-500">%</span></div></div> : <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">New Total Base Rent</label><div className="relative"><span className="absolute left-3 top-2 text-gray-500">$</span><input type="number" className="border p-2 pl-6 rounded w-32 text-right outline-none" value={escalationFixed} onChange={(e) => setEscalationFixed(Number(e.target.value))} /></div></div>}
                     {escalationDate && <button onClick={openEscalationModal} className="w-full mt-2 py-2 rounded font-bold text-white bg-orange-500 hover:bg-orange-600 transition shadow-sm">⚡ Review & Execute Escalation</button>}
                   </div>
-
-                  {/* NEW: CRITICAL DATES & OPTIONS */}
-                  <div className="space-y-3 pt-4 border-t">
-                    <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Critical Dates & Options</h4>
-                    <p className="text-xs text-gray-500 mb-2">The system will alert you 180 days prior to these dates.</p>
-                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">ROFR Notice Date</label><input type="date" className="border p-2 rounded w-40 outline-none" value={rofrDate} onChange={(e) => setRofrDate(e.target.value)} /></div>
-                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Expansion Option Date</label><input type="date" className="border p-2 rounded w-40 outline-none" value={expansionDate} onChange={(e) => setExpansionDate(e.target.value)} /></div>
-                    <div className="flex items-center justify-between"><label className="text-sm font-medium text-gray-700">Early Termination Date</label><input type="date" className="border p-2 rounded w-40 outline-none" value={terminationDate} onChange={(e) => setTerminationDate(e.target.value)} /></div>
-                  </div>
-
                   <button onClick={saveProfile} disabled={isSaving} className="w-full mt-6 py-3 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-sm">{isSaving ? 'Saving...' : 'Save Financials & Rules'}</button>
                 </div>
               ) : <div className="p-4 bg-yellow-50 text-yellow-800 rounded border border-yellow-200 text-sm">No active lease attached.</div>}
@@ -288,6 +326,7 @@ export default function TenantProfilePage() {
                     <td className="px-6 py-4 text-sm"><span className={`px-2 py-1 rounded-full text-xs font-bold ${inv.status === 'Paid' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{inv.status}</span></td>
                   </tr>
                 ))}
+                {invoices.length === 0 && <tr><td colSpan={4} className="px-6 py-8 text-center text-gray-500">No invoices on file.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -329,6 +368,7 @@ export default function TenantProfilePage() {
           </div>
         )}
 
+        {/* ESCALATION PREVIEW MODAL */}
         {isEscalationModalOpen && (
           <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl">

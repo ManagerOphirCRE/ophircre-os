@@ -45,9 +45,26 @@ export default function BillingPage() {
       for (const lease of leases) {
         const totalRent = Number(lease.base_rent_amount || 0) + Number(lease.cam_charge || 0) + Number(lease.tax_charge || 0) + Number(lease.insurance_charge || 0);
         if (totalRent > 0) {
-          newInvoices.push({ tenant_id: lease.tenant_id, lease_id: lease.id, amount: totalRent, description: `${monthName} Rent & Escrows`, due_date: dueDate, status: 'Unpaid' });
-          if (sendEmails && lease.tenants?.contact_email) {
-            emailsToSend.push({ to: lease.tenants.contact_email, subject: `Invoice Available: ${monthName} Rent`, text: `Your rent invoice for ${monthName} ($${totalRent.toFixed(2)}) is due on ${dueDate}. Pay here: https://app.ophircre.com/portal-login` });
+          
+          // NEW: SPLIT BILLING LOGIC
+          const coTenants = lease.co_tenants ||[];
+          
+          if (coTenants.length > 0) {
+            // Generate an invoice for each Co-Tenant
+            for (const ct of coTenants) {
+              const splitAmount = totalRent * (Number(ct.split_percentage) / 100);
+              newInvoices.push({ tenant_id: lease.tenant_id, lease_id: lease.id, amount: splitAmount, description: `${monthName} Rent (${ct.split_percentage}% Split) - ${ct.name}`, due_date: dueDate, status: 'Unpaid', organization_id: lease.organization_id });
+              
+              if (sendEmails && ct.email) {
+                emailsToSend.push({ to: ct.email, subject: `Invoice Available: ${monthName} Rent`, text: `Hello ${ct.name},\n\nYour rent invoice for ${monthName} ($${splitAmount.toFixed(2)}) is due on ${dueDate}. Pay here: https://app.ophircre.com/portal-login` });
+              }
+            }
+          } else {
+            // Standard Single Tenant Billing
+            newInvoices.push({ tenant_id: lease.tenant_id, lease_id: lease.id, amount: totalRent, description: `${monthName} Rent & Escrows`, due_date: dueDate, status: 'Unpaid', organization_id: lease.organization_id });
+            if (sendEmails && lease.tenants?.contact_email) {
+              emailsToSend.push({ to: lease.tenants.contact_email, subject: `Invoice Available: ${monthName} Rent`, text: `Your rent invoice for ${monthName} ($${totalRent.toFixed(2)}) is due on ${dueDate}. Pay here: https://app.ophircre.com/portal-login` });
+            }
           }
         }
       }

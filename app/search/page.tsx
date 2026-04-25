@@ -1,37 +1,39 @@
-"use client"
-import { useState, useEffect } from 'react'
-import { supabase } from '@/app/utils/supabase'
-import { useSearchParams } from 'next/navigation'
+"use client";
+import { useState, useEffect } from 'react';
+import { supabase } from '@/app/utils/supabase';
+import { useSearchParams } from 'next/navigation';
 
 export default function SearchPage() {
-  const searchParams = useSearchParams()
-  const query = searchParams.get('q') || ''
+  const searchParams = useSearchParams();
+  const query = searchParams.get('q') || '';
   
-  const [tenants, setTenants] = useState<any[]>([])
-  const [properties, setProperties] = useState<any[]>([])
-  const[tasks, setTasks] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [tenants, setTenants] = useState<any[]>([]);
+  const[properties, setProperties] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]); // NEW: OCR Ledger Search
+  const[isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (query) performSearch()
-  }, [query])
+    if (query) performSearch();
+  }, [query]);
 
   async function performSearch() {
-    setIsLoading(true)
+    setIsLoading(true);
     
-    // Search Tenants (ilike = case insensitive search)
-    const { data: tData } = await supabase.from('tenants').select('*').ilike('name', `%${query}%`)
-    if (tData) setTenants(tData)
+    const { data: tData } = await supabase.from('tenants').select('*').ilike('name', `%${query}%`);
+    if (tData) setTenants(tData);
 
-    // Search Properties
-    const { data: pData } = await supabase.from('properties').select('*').ilike('name', `%${query}%`)
-    if (pData) setProperties(pData)
+    const { data: pData } = await supabase.from('properties').select('*').ilike('name', `%${query}%`);
+    if (pData) setProperties(pData);
 
-    // Search Tasks
-    const { data: tkData } = await supabase.from('tasks').select('*').ilike('title', `%${query}%`)
-    if (tkData) setTasks(tkData)
+    const { data: tkData } = await supabase.from('tasks').select('*').ilike('title', `%${query}%`);
+    if (tkData) setTasks(tkData);
 
-    setIsLoading(false)
+    // NEW: Search the General Ledger descriptions (OCR Extracted Text)
+    const { data: txnData } = await supabase.from('journal_entries').select('*, transactions(date), chart_of_accounts(name)').ilike('description', `%${query}%`);
+    if (txnData) setTransactions(txnData);
+
+    setIsLoading(false);
   }
 
   return (
@@ -41,9 +43,8 @@ export default function SearchPage() {
       {isLoading ? (
         <p>Searching database...</p>
       ) : (
-        <div className="space-y-8">
+        <div className="space-y-8 max-w-5xl">
           
-          {/* Tenant Results */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 className="font-bold text-lg text-gray-800 mb-4 border-b pb-2">Tenants ({tenants.length})</h3>
             {tenants.length > 0 ? tenants.map(t => (
@@ -54,7 +55,6 @@ export default function SearchPage() {
             )) : <p className="text-sm text-gray-500">No tenants found.</p>}
           </div>
 
-          {/* Property Results */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 className="font-bold text-lg text-gray-800 mb-4 border-b pb-2">Properties ({properties.length})</h3>
             {properties.length > 0 ? properties.map(p => (
@@ -65,7 +65,20 @@ export default function SearchPage() {
             )) : <p className="text-sm text-gray-500">No properties found.</p>}
           </div>
 
-          {/* Task Results */}
+          {/* NEW: Ledger Search Results */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <h3 className="font-bold text-lg text-gray-800 mb-4 border-b pb-2">Financial Records & Invoices ({transactions.length})</h3>
+            {transactions.length > 0 ? transactions.map(t => (
+              <div key={t.id} className="p-3 hover:bg-gray-50 border-b last:border-0 flex justify-between items-center">
+                <div>
+                  <p className="font-bold text-gray-900">{t.description}</p>
+                  <p className="text-sm text-gray-500">{t.chart_of_accounts?.name} | {t.transactions?.date}</p>
+                </div>
+                <p className="font-black text-gray-900">${Number(t.debit || t.credit).toFixed(2)}</p>
+              </div>
+            )) : <p className="text-sm text-gray-500">No financial records found.</p>}
+          </div>
+
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 className="font-bold text-lg text-gray-800 mb-4 border-b pb-2">Tasks ({tasks.length})</h3>
             {tasks.length > 0 ? tasks.map(t => (
@@ -79,5 +92,5 @@ export default function SearchPage() {
         </div>
       )}
     </main>
-  )
+  );
 }
