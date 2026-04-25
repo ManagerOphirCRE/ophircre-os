@@ -5,7 +5,7 @@ import { supabase } from '@/app/utils/supabase';
 export default function TenantPortal() {
   const [tenant, setTenant] = useState<any>(null);
   const[invoices, setInvoices] = useState<any[]>([]);
-  const [myTasks, setMyTasks] = useState<any[]>([]); // NEW: Ticket History
+  const [myTasks, setMyTasks] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isPaying, setIsPaying] = useState(false);
   const [isRenewing, setIsRenewing] = useState(false);
@@ -38,7 +38,6 @@ export default function TenantPortal() {
           setTenant(tData);
           const { data: iData } = await supabase.from('tenant_invoices').select('*').eq('tenant_id', tData.id).order('due_date', { ascending: false });
           if (iData) setInvoices(iData);
-          // NEW: Fetch their tasks
           const { data: tkData } = await supabase.from('tasks').select('*').eq('tenant_id', tData.id).order('created_at', { ascending: false });
           if (tkData) setMyTasks(tkData);
         }
@@ -56,7 +55,7 @@ export default function TenantPortal() {
       const fileName = `${tenant.name.replace(/\s+/g, '_')}_${docType}_${Math.random().toString(36).substring(2)}.${fileExt}`;
       const { error } = await supabase.storage.from('documents').upload(fileName, file);
       if (error) throw error;
-      await supabase.from('tasks').insert([{ title: `DOCUMENT UPLOADED: ${tenant.name}`, description: `Prospect uploaded their ${docType}.`, tenant_id: tenant.id, status: 'To Do' }]);
+      await supabase.from('tasks').insert([{ title: `DOCUMENT UPLOADED: ${tenant.name}`, description: `Prospect uploaded their ${docType}.`, tenant_id: tenant.id, status: 'To Do', organization_id: tenant.organization_id }]);
       alert(`${docType} uploaded successfully!`);
     } catch (error: any) { alert('Error: ' + error.message); } finally { setUploadingDoc(false); }
   }
@@ -66,13 +65,6 @@ export default function TenantPortal() {
     setIsSigning(true);
     try {
       await supabase.from('leases').update({ tenant_signature: signature, signed_at: new Date().toISOString(), status: 'Active' }).eq('id', tenant.leases[0].id);
-      
-      // NEW: Fire the Zapier Webhook!
-      fetch('/api/trigger-webhook', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orgId: tenant.organization_id, eventType: 'lease_signed', payload: { tenantName: tenant.name, email: tenant.contact_email, property: tenant.leases[0].spaces?.properties?.name } })
-      }).catch(e => console.error("Webhook failed", e));
-
       alert("Lease executed!"); window.location.reload();
     } catch (error: any) { alert("Error: " + error.message); } finally { setIsSigning(false); }
   }
@@ -81,7 +73,7 @@ export default function TenantPortal() {
     if (!redlineNotes) return alert("Explain the changes.");
     setIsSigning(true);
     try {
-      await supabase.from('tasks').insert([{ title: `REDLINE REQUEST: ${tenant.name}`, description: `Changes requested:\n\n${redlineNotes}`, tenant_id: tenant.id, status: 'To Do' }]);
+      await supabase.from('tasks').insert([{ title: `REDLINE REQUEST: ${tenant.name}`, description: `Changes requested:\n\n${redlineNotes}`, tenant_id: tenant.id, status: 'To Do', organization_id: tenant.organization_id }]);
       alert("Changes sent to management."); setRedlineNotes('');
     } catch (error: any) { alert("Error: " + error.message); } finally { setIsSigning(false); }
   }
@@ -93,7 +85,7 @@ export default function TenantPortal() {
       const currentEndDate = new Date(lease.end_date); currentEndDate.setFullYear(currentEndDate.getFullYear() + 1);
       const newEndDate = currentEndDate.toISOString().split('T')[0];
       await supabase.from('leases').update({ end_date: newEndDate, base_rent_amount: lease.renewal_offer_rent, renewal_status: 'Accepted' }).eq('id', lease.id);
-      await supabase.from('tasks').insert([{ title: `RENEWAL ACCEPTED: ${tenant.name}`, description: `Lease extended to ${newEndDate} at $${lease.renewal_offer_rent}/mo.`, tenant_id: tenant.id, status: 'To Do' }]);
+      await supabase.from('tasks').insert([{ title: `RENEWAL ACCEPTED: ${tenant.name}`, description: `Lease extended to ${newEndDate} at $${lease.renewal_offer_rent}/mo.`, tenant_id: tenant.id, status: 'To Do', organization_id: tenant.organization_id }]);
       alert("Lease renewed!"); window.location.reload();
     } catch (error: any) { alert("Error: " + error.message); } finally { setIsRenewing(false); }
   }
@@ -109,6 +101,7 @@ export default function TenantPortal() {
     } catch (error: any) { alert("Payment Error: " + error.message); setIsPaying(false); }
   }
 
+  // THIS IS THE FUNCTION WITH THE PUSH NOTIFICATION FIX!
   async function submitTicket(e: any) {
     e.preventDefault(); setIsSubmitting(true);
     try {
@@ -120,8 +113,27 @@ export default function TenantPortal() {
         const { data } = supabase.storage.from('documents').getPublicUrl(fileName);
         photoUrl = `\n\nAttached Photo: ${data.publicUrl}`;
       }
-      await supabase.from('tasks').insert([{ title: `TENANT TICKET: ${ticketTitle}`, description: ticketDesc + photoUrl, tenant_id: tenant.id, status: 'New' }]);
-      alert("Ticket submitted!"); setTicketTitle(''); setTicketDesc(''); setTicketFile(null);
+      
+      await supabase.from('tasks').insert([{ 
+        title: `TENANT TICKET: ${ticketTitle}`, 
+        description: ticketDesc + photoUrl, 
+        tenant_id: tenant.id, 
+        status: 'New',
+        organization_id: tenant.organization_id
+      }]);
+
+      // Trigger the Push Notification to the Admin's phone
+      fetch('/api/trigger-push', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          orgId: tenant.organization_id, 
+          title: `New Ticket: ${tenant.name}`, 
+          body: ticketTitle,
+          url: '/tasks'
+        })
+      }).catch(e => console.error("Push failed", e));
+
+      alert("Ticket submitted securely!"); setTicketTitle(''); setTicketDesc(''); setTicketFile(null);
       const { data: tkData } = await supabase.from('tasks').select('*').eq('tenant_id', tenant.id).order('created_at', { ascending: false });
       if (tkData) setMyTasks(tkData);
     } catch (error: any) { alert("Error: " + error.message); } finally { setIsSubmitting(false); }
@@ -129,11 +141,10 @@ export default function TenantPortal() {
 
   async function submitSurvey(e: any) {
     e.preventDefault();
-    await supabase.from('tenant_surveys').insert([{ tenant_id: tenant.id, rating, feedback }]);
+    await supabase.from('tenant_surveys').insert([{ tenant_id: tenant.id, rating, feedback, organization_id: tenant.organization_id }]);
     setSurveySent(true);
   }
 
-  // NEW: Print Lease Function
   function printLease() {
     const leaseHtml = tenant.leases?.[0]?.document_html;
     if (!leaseHtml) return alert("Lease document not found.");
@@ -202,7 +213,17 @@ export default function TenantPortal() {
             <button onClick={() => handlePayment(unpaidBalance)} disabled={isPaying || unpaidBalance <= 0} className={`w-full py-3 rounded-lg font-bold text-white transition ${isPaying || unpaidBalance <= 0 ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700 shadow-sm'}`}>{isPaying ? 'Connecting...' : unpaidBalance > 0 ? 'Pay Balance Now' : 'Balance Paid'}</button>
           </div>
 
-          {/* NEW: My Documents Section */}
+          {activeLease && (
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+              <h3 className="font-bold text-gray-800 mb-4 border-b pb-2">Lease Details</h3>
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between"><span className="text-gray-500">Property</span><span className="font-medium text-gray-900 text-right">{activeLease.spaces?.properties?.name}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Suite</span><span className="font-medium text-gray-900">{activeLease.spaces?.name}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Expires</span><span className="font-medium text-gray-900">{activeLease.end_date}</span></div>
+              </div>
+            </div>
+          )}
+
           {activeLease && (
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
               <h3 className="font-bold text-gray-800 mb-4 border-b pb-2">My Documents</h3>
@@ -259,8 +280,7 @@ export default function TenantPortal() {
               </form>
             </div>
 
-            {/* NEW: Ticket History with Live Chat */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[600px]">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[500px]">
               <div className="p-6 bg-gray-50 border-b border-gray-200"><h3 className="font-bold text-gray-800">My Tickets & Messages</h3></div>
               <div className="flex-1 overflow-y-auto p-4 space-y-6">
                 {myTasks.map(task => (
@@ -271,20 +291,16 @@ export default function TenantPortal() {
                     </div>
                     <p className="text-xs text-gray-600 mb-4 whitespace-pre-wrap">{task.description}</p>
                     
-                    {/* Chat History */}
                     <div className="bg-gray-50 rounded-lg p-3 space-y-3 mb-3 border border-gray-100 max-h-48 overflow-y-auto">
                       {(task.comments ||[]).map((msg: any, idx: number) => (
                         <div key={idx} className={`flex flex-col ${msg.sender === 'Tenant' ? 'items-end' : 'items-start'}`}>
                           <span className="text-[9px] text-gray-400 font-bold uppercase mb-1">{msg.sender === 'Tenant' ? 'You' : 'Management'} • {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                          <div className={`px-3 py-2 rounded-lg text-xs max-w-[90%] ${msg.sender === 'Tenant' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-gray-200 text-gray-800 rounded-bl-none'}`}>
-                            {msg.text}
-                          </div>
+                          <div className={`px-3 py-2 rounded-lg text-xs max-w-[90%] ${msg.sender === 'Tenant' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-gray-200 text-gray-800 rounded-bl-none'}`}>{msg.text}</div>
                         </div>
                       ))}
                       {(!task.comments || task.comments.length === 0) && <p className="text-center text-gray-400 text-xs italic py-2">No messages yet.</p>}
                     </div>
 
-                    {/* Chat Input */}
                     <form onSubmit={async (e: any) => {
                       e.preventDefault();
                       const input = e.target.elements.message;
@@ -294,7 +310,6 @@ export default function TenantPortal() {
                       try {
                         await supabase.from('tasks').update({ comments: updatedHistory }).eq('id', task.id);
                         input.value = '';
-                        // Refresh the list
                         const { data: tkData } = await supabase.from('tasks').select('*').eq('tenant_id', tenant.id).order('created_at', { ascending: false });
                         if (tkData) setMyTasks(tkData);
                       } catch (err: any) { alert("Error: " + err.message); }

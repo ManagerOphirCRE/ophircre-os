@@ -1,41 +1,50 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/app/utils/supabase';
+import { useOrg } from '@/app/context/OrgContext';
+import { BrowserMultiFormatReader } from '@zxing/browser';
 
 export default function InventoryPage() {
+  const { orgId } = useOrg();
   const [items, setItems] = useState<any[]>([]);
-  const [properties, setProperties] = useState<any[]>([]);
+  const[properties, setProperties] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Form State
-  const[itemName, setItemName] = useState('');
-  const [category, setCategory] = useState('General');
+  const [itemName, setItemName] = useState('');
+  const[category, setCategory] = useState('General');
   const [propertyId, setPropertyId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [reorderLevel, setReorderLevel] = useState('5');
-  const[cost, setCost] = useState('');
+  const [cost, setCost] = useState('');
+  const [barcode, setBarcode] = useState('');
+
+  // Scanner State
+  const [isScanning, setIsScanning] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const codeReader = useRef(new BrowserMultiFormatReader());
 
   useEffect(() => {
-    async function fetchData() {
-      const { data: iData } = await supabase.from('inventory').select('*, properties(name)').order('item_name');
-      if (iData) setItems(iData);
-      const { data: pData } = await supabase.from('properties').select('*').order('name');
-      if (pData) setProperties(pData);
-    }
-    fetchData();
-  },[]);
+    if (orgId) fetchData();
+  }, [orgId]);
+
+  async function fetchData() {
+    const { data: iData } = await supabase.from('inventory').select('*, properties(name)').order('item_name');
+    if (iData) setItems(iData);
+    const { data: pData } = await supabase.from('properties').select('*').order('name');
+    if (pData) setProperties(pData);
+  }
 
   async function saveItem(e: any) {
     e.preventDefault();
     try {
       await supabase.from('inventory').insert([{
         item_name: itemName, category, property_id: propertyId || null,
-        quantity: Number(quantity), reorder_level: Number(reorderLevel), cost_per_unit: Number(cost)
+        quantity: Number(quantity), reorder_level: Number(reorderLevel), cost_per_unit: Number(cost),
+        barcode, organization_id: orgId
       }]);
       setIsModalOpen(false);
-      setItemName(''); setQuantity(''); setCost('');
-      const { data } = await supabase.from('inventory').select('*, properties(name)').order('item_name');
-      if (data) setItems(data);
+      setItemName(''); setQuantity(''); setCost(''); setBarcode('');
+      fetchData();
     } catch (error: any) { alert("Error: " + error.message); }
   }
 
@@ -43,27 +52,84 @@ export default function InventoryPage() {
     const newQty = currentQty + change;
     if (newQty < 0) return;
     await supabase.from('inventory').update({ quantity: newQty }).eq('id', id);
-    const { data } = await supabase.from('inventory').select('*, properties(name)').order('item_name');
-    if (data) setItems(data);
+    fetchData();
   }
 
   async function deleteItem(id: string) {
     if (!confirm("Delete this item?")) return;
     await supabase.from('inventory').delete().eq('id', id);
-    const { data } = await supabase.from('inventory').select('*, properties(name)').order('item_name');
-    if (data) setItems(data);
+    fetchData();
+  }
+
+  // --- NATIVE BARCODE SCANNER LOGIC ---
+  async function startScanner() {
+    setIsScanning(true);
+    try {
+      const videoInputDevices = await BrowserMultiFormatReader.listVideoInputDevices();
+      // Prefer the back camera on mobile phones
+      const selectedDeviceId = videoInputDevices.length > 1 ? videoInputDevices[1].deviceId : videoInputDevices[0].deviceId;
+      
+      if (videoRef.current) {
+        codeReader.current.decodeFromVideoDevice(selectedDeviceId, videoRef.current, async (result, err) => {
+          if (result) {
+            // Stop scanning once we get a result
+            codeReader.current.reset();
+            setIsScanning(false);
+            
+            const scannedCode = result.getText();
+            
+            // Look up the item in the database
+            const { data: item } = await supabase.from('inventory').select('*').eq('barcode', scannedCode).eq('organization_id', orgId).single();
+            
+            if (item) {
+              // Auto-deduct 1 from inventory
+              await adjustQuantity(item.id, item.quantity, -1);
+              alert(`Scanned: ${item.item_name}\nQuantity reduced by 1.`);
+            } else {
+              alert(`Barcode ${scannedCode} not found in inventory.`);
+            }
+          }
+        });
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Could not access camera.");
+      setIsScanning(false);
+    }
+  }
+
+  function stopScanner() {
+    codeReader.current.reset();
+    setIsScanning(false);
   }
 
   return (
     <>
       <header className="bg-white border-b border-gray-200 px-8 py-4 flex justify-between items-center">
         <h2 className="text-xl font-semibold text-gray-800">Maintenance Inventory</h2>
-        <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition">
-          + Add Supply Item
-        </button>
+        <div className="space-x-3">
+          <button onClick={startScanner} className="bg-gray-800 hover:bg-black text-white px-4 py-2 rounded-md font-medium transition shadow-sm">
+            📷 Scan Barcode
+          </button>
+          <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition shadow-sm">
+            + Add Supply Item
+          </button>
+        </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-8 bg-gray-100">
+      <main className="flex-1 overflow-y-auto p-8 bg-gray-100 relative">
+        
+        {/* SCANNER OVERLAY */}
+        {isScanning && (
+          <div className="absolute inset-0 bg-black z-40 flex flex-col items-center justify-center">
+            <h3 className="text-white font-bold text-xl mb-4">Point camera at barcode...</h3>
+            <div className="w-full max-w-md border-4 border-green-500 rounded-lg overflow-hidden">
+              <video ref={videoRef} className="w-full h-auto" />
+            </div>
+            <button onClick={stopScanner} className="mt-8 bg-red-600 text-white px-8 py-3 rounded-full font-bold">Cancel Scan</button>
+          </div>
+        )}
+
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -71,7 +137,7 @@ export default function InventoryPage() {
                 <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Item Name</th>
                 <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Location</th>
                 <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Stock Level</th>
-                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Unit Cost</th>
+                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Barcode</th>
                 <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase">Adjust</th>
               </tr>
             </thead>
@@ -90,7 +156,7 @@ export default function InventoryPage() {
                         {item.quantity} in stock {isLow && '(Low!)'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">${item.cost_per_unit}</td>
+                    <td className="px-6 py-4 text-sm font-mono text-gray-400">{item.barcode || 'None'}</td>
                     <td className="px-6 py-4 text-right space-x-2">
                       <button onClick={() => adjustQuantity(item.id, item.quantity, -1)} className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded font-bold">-</button>
                       <button onClick={() => adjustQuantity(item.id, item.quantity, 1)} className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded font-bold">+</button>
@@ -104,7 +170,7 @@ export default function InventoryPage() {
         </div>
 
         {isModalOpen && (
-          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-8 rounded-xl shadow-lg w-[500px]">
               <h3 className="text-xl font-bold mb-6 text-gray-800">Add Inventory Item</h3>
               <form onSubmit={saveItem} className="space-y-4">
@@ -129,6 +195,7 @@ export default function InventoryPage() {
                   <div><label className="block text-sm font-medium mb-1">Reorder At</label><input type="number" required className="w-full border p-2 rounded outline-none" value={reorderLevel} onChange={(e) => setReorderLevel(e.target.value)} /></div>
                   <div><label className="block text-sm font-medium mb-1">Unit Cost ($)</label><input type="number" step="0.01" className="w-full border p-2 rounded outline-none" value={cost} onChange={(e) => setCost(e.target.value)} /></div>
                 </div>
+                <div><label className="block text-sm font-medium mb-1">UPC Barcode (Optional)</label><input type="text" placeholder="Scan or type barcode..." className="w-full border p-2 rounded outline-none font-mono" value={barcode} onChange={(e) => setBarcode(e.target.value)} /></div>
                 <div className="flex justify-end space-x-3 pt-4 border-t">
                   <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded font-medium">Cancel</button>
                   <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium">Save Item</button>

@@ -17,6 +17,8 @@
     "@types/jszip": "^3.4.0",
     "@types/papaparse": "^5.5.2",
     "@types/web-push": "^3.6.4",
+    "@zxing/browser": "^0.1.5",
+    "@zxing/library": "^0.21.3",
     "googleapis": "^171.4.0",
     "intuit-oauth": "^4.2.3",
     "jszip": "^3.10.1",
