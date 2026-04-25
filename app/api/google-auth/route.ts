@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const state = searchParams.get('state'); // Grab the orgId from the URL
+    const state = searchParams.get('state'); // Grab the orgId
 
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
@@ -22,7 +24,7 @@ export async function GET(req: Request) {
       access_type: 'offline',
       scope: scopes,
       prompt: 'consent',
-      state: state || '' // FIX: Pass the orgId to Google so it comes back!
+      state: state || 'missing_org' // FIX: Ensure it is never blank
     });
 
     return NextResponse.json({ url });

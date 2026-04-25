@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { createClient } from '@supabase/supabase-js';
 
+export const dynamic = 'force-dynamic';
+
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
 export async function GET(req: Request) {
@@ -14,19 +16,23 @@ export async function GET(req: Request) {
     if (!tokens || tokens.length === 0) return NextResponse.json({ connected: false });
 
     let totalSynced = 0;
-    const connectedAccounts: string[] = [];
+    const connectedAccounts: string[] =[];
     const syncErrors: string[] =[];
 
     for (const tokenData of tokens) {
-      connectedAccounts.push(tokenData.user_email); // Add to our list of connected accounts!
+      connectedAccounts.push(tokenData.user_email);
 
       try {
         const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
         oauth2Client.setCredentials({ access_token: tokenData.access_token, refresh_token: tokenData.refresh_token });
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-        // Fetch the last 30 emails (Removed strict inbox filter so it catches everything)
-        const gmailRes = await gmail.users.messages.list({ userId: 'me', maxResults: 30 });
+        // FIX: Increased limit to 50 and forced it to look ONLY in the Inbox!
+        const gmailRes = await gmail.users.messages.list({ 
+          userId: 'me', 
+          maxResults: 50,
+          q: 'in:inbox' 
+        });
         
         if (gmailRes.data.messages) {
           for (const msg of gmailRes.data.messages) {
@@ -49,7 +55,6 @@ export async function GET(req: Request) {
           }
         }
       } catch (err: any) {
-        // If one account fails (e.g. expired token), log the error but don't crash the others!
         syncErrors.push(`Failed to sync ${tokenData.user_email}: ${err.message}`);
       }
     }
@@ -57,7 +62,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ 
       connected: true, 
       synced: totalSynced, 
-      accounts: connectedAccounts, // Send the exact list of accounts back to the UI
+      accounts: connectedAccounts, 
       errors: syncErrors 
     });
   } catch (error: any) {
