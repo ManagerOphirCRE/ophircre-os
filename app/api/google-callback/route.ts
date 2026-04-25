@@ -8,9 +8,11 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const code = searchParams.get('code');
-    const state = searchParams.get('state'); 
-    
-    if (!code) throw new Error("No code provided");
+    const state = searchParams.get('state'); // The orgId
+    const errorParam = searchParams.get('error');
+
+    if (errorParam) throw new Error(`Google denied access: ${errorParam}`);
+    if (!code) throw new Error("No code provided by Google");
 
     const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, `https://app.ophircre.com/api/google-callback`);
     const { tokens } = await oauth2Client.getToken(code);
@@ -21,14 +23,13 @@ export async function GET(req: Request) {
     const userEmail = profile.data.emailAddress?.toLowerCase();
 
     if (userEmail) {
-      // FIX: Manually check if the account exists to prevent database constraint errors
+      // FIX: Manually check and update to avoid database constraint crashes
       const { data: existing } = await supabase.from('google_tokens').select('id, refresh_token').eq('user_email', userEmail).maybeSingle();
       
       const payload = {
         user_email: userEmail,
         access_token: tokens.access_token,
-        // Google only sends a refresh token on the VERY first login. We must preserve the old one if it exists!
-        refresh_token: tokens.refresh_token || existing?.refresh_token, 
+        refresh_token: tokens.refresh_token || existing?.refresh_token,
         expiry_date: tokens.expiry_date,
         organization_id: state && state !== 'null' ? state : null
       };
@@ -42,6 +43,7 @@ export async function GET(req: Request) {
     
     return NextResponse.redirect(`https://app.ophircre.com/workspace?connected=true`);
   } catch (error: any) {
+    console.error("Callback Error:", error.message);
     return NextResponse.redirect(`https://app.ophircre.com/workspace?error=${encodeURIComponent(error.message)}`);
   }
 }

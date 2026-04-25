@@ -6,20 +6,28 @@ import { useOrg } from '@/app/context/OrgContext';
 export default function WorkspacePage() {
   const { orgId } = useOrg();
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
-  const[isSyncing, setIsSyncing] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const[isLoading, setIsLoading] = useState(true);
   
   const [emails, setEmails] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<string[]>([]);
-  const [selectedAccount, setSelectedAccount] = useState('ALL');
+  const[selectedAccount, setSelectedAccount] = useState('ALL');
   
   const [properties, setProperties] = useState<any[]>([]);
-  const[taskModalEmail, setTaskModalEmail] = useState<any>(null);
-  const [selectedPropertyId, setSelectedPropertyId] = useState('');
+  const [taskModalEmail, setTaskModalEmail] = useState<any>(null);
+  const[selectedPropertyId, setSelectedPropertyId] = useState('');
 
   const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
+    // NEW: Catch errors sent back from the Google Callback API
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlError = urlParams.get('error');
+    if (urlError) {
+      setSyncError(`Authentication Failed: ${urlError}`);
+      window.history.replaceState(null, '', '/workspace'); // Clean the URL
+    }
+
     if (orgId) {
       fetchProperties();
       checkConnectionAndSync();
@@ -33,24 +41,26 @@ export default function WorkspacePage() {
 
   async function checkConnectionAndSync() {
     setIsLoading(true);
-    setSyncError(null);
     try {
-      const res = await fetch(`/api/google-workspace?orgId=${orgId}`);
-      const data = await res.json();
+      const { data: tokens } = await supabase.from('google_tokens').select('*').eq('organization_id', orgId);
       
-      if (data.connected) {
+      if (tokens && tokens.length > 0) {
         setIsGoogleConnected(true);
-        
-        // FIX: Populate dropdown directly from the API's confirmed list of accounts!
-        if (data.accounts) setAccounts(data.accounts);
+        const connectedEmails = tokens.map(t => t.user_email);
+        setAccounts(connectedEmails);
 
-        if (data.errors && data.errors.length > 0) {
-          setSyncError(data.errors.join(' | '));
-        }
-
-        // Fetch emails from database
         const { data: dbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
         if (dbEmails) setEmails(dbEmails);
+
+        const res = await fetch(`/api/google-workspace?orgId=${orgId}`);
+        const data = await res.json();
+        
+        if (data.error) {
+          setSyncError(`Google API Error: ${data.error}`);
+        } else if (data.synced > 0) {
+          const { data: newDbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
+          if (newDbEmails) setEmails(newDbEmails);
+        }
       }
     } catch (e: any) {
       setSyncError(e.message);
@@ -71,7 +81,6 @@ export default function WorkspacePage() {
       } else {
         alert(`Sync complete! Found ${data.synced || 0} new emails.`);
         if (data.accounts) setAccounts(data.accounts);
-        if (data.errors && data.errors.length > 0) setSyncError(data.errors.join(' | '));
         
         const { data: dbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
         if (dbEmails) setEmails(dbEmails);
