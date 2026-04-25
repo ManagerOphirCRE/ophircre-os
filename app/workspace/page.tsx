@@ -5,19 +5,19 @@ import { useOrg } from '@/app/context/OrgContext';
 
 export default function WorkspacePage() {
   const { orgId } = useOrg();
-  const[isGoogleConnected, setIsGoogleConnected] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isGoogleConnected, setIsGoogleConnected] = useState(false);
+  const[isSyncing, setIsSyncing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
-  const[emails, setEmails] = useState<any[]>([]);
+  const [emails, setEmails] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<string[]>([]);
   const [selectedAccount, setSelectedAccount] = useState('ALL');
   
-  const[properties, setProperties] = useState<any[]>([]);
-  const [taskModalEmail, setTaskModalEmail] = useState<any>(null);
+  const [properties, setProperties] = useState<any[]>([]);
+  const[taskModalEmail, setTaskModalEmail] = useState<any>(null);
   const [selectedPropertyId, setSelectedPropertyId] = useState('');
 
-  const[syncError, setSyncError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     if (orgId) {
@@ -35,38 +35,22 @@ export default function WorkspacePage() {
     setIsLoading(true);
     setSyncError(null);
     try {
-      // 1. Check if we have tokens in the database for this organization
-      const { data: tokens, error: tokenErr } = await supabase.from('google_tokens').select('*').eq('organization_id', orgId);
+      const res = await fetch(`/api/google-workspace?orgId=${orgId}`);
+      const data = await res.json();
       
-      if (tokenErr) throw new Error("Database error checking tokens: " + tokenErr.message);
-
-      if (tokens && tokens.length > 0) {
+      if (data.connected) {
         setIsGoogleConnected(true);
         
-        // FIX: Populate the dropdown directly from the connected tokens, NOT the emails!
-        const connectedEmails = tokens.map(t => t.user_email);
-        setAccounts(connectedEmails);
+        // FIX: Populate dropdown directly from the API's confirmed list of accounts!
+        if (data.accounts) setAccounts(data.accounts);
 
-        // 2. Fetch existing emails from database
+        if (data.errors && data.errors.length > 0) {
+          setSyncError(data.errors.join(' | '));
+        }
+
+        // Fetch emails from database
         const { data: dbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
         if (dbEmails) setEmails(dbEmails);
-
-        // 3. Ping the API to sync NEW emails in the background
-        const res = await fetch(`/api/google-workspace?orgId=${orgId}`);
-        const data = await res.json();
-        
-        if (data.error) {
-          setSyncError(`Google API Error: ${data.error}. (Did you check the permission boxes on the Google login screen?)`);
-        } else if (data.synced > 0) {
-          const { data: newDbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
-          if (newDbEmails) setEmails(newDbEmails);
-        }
-      } else {
-        // DIAGNOSTIC: Check if tokens exist but are missing the orgId
-        const { data: allTokens } = await supabase.from('google_tokens').select('*');
-        if (allTokens && allTokens.length > 0) {
-          setSyncError(`Diagnostic: Found ${allTokens.length} Google accounts in the database, but they are not linked to your Organization ID. Please click Authenticate below to reconnect them.`);
-        }
       }
     } catch (e: any) {
       setSyncError(e.message);
@@ -86,6 +70,9 @@ export default function WorkspacePage() {
         setSyncError(`Google API Error: ${data.error}`);
       } else {
         alert(`Sync complete! Found ${data.synced || 0} new emails.`);
+        if (data.accounts) setAccounts(data.accounts);
+        if (data.errors && data.errors.length > 0) setSyncError(data.errors.join(' | '));
+        
         const { data: dbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
         if (dbEmails) setEmails(dbEmails);
       }
@@ -161,7 +148,6 @@ export default function WorkspacePage() {
             <button onClick={connectNewGoogleAccount} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold transition shadow-sm text-lg">
               Authenticate with Google
             </button>
-            <p className="text-xs text-red-500 font-bold mt-4">IMPORTANT: When Google asks for permissions, you MUST check the boxes to allow reading emails and managing tasks!</p>
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[calc(100vh-150px)]">

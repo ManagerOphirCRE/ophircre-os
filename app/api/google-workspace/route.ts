@@ -14,45 +14,52 @@ export async function GET(req: Request) {
     if (!tokens || tokens.length === 0) return NextResponse.json({ connected: false });
 
     let totalSynced = 0;
+    const connectedAccounts: string[] = [];
+    const syncErrors: string[] =[];
 
     for (const tokenData of tokens) {
-      const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
-      oauth2Client.setCredentials({ 
-        access_token: tokenData.access_token, 
-        refresh_token: tokenData.refresh_token 
-      });
-      const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+      connectedAccounts.push(tokenData.user_email); // Add to our list of connected accounts!
 
-      // FIX: Increased limit to 50 and forced it to look specifically in the Inbox
-      const gmailRes = await gmail.users.messages.list({ 
-        userId: 'me', 
-        maxResults: 50,
-        q: 'in:inbox' 
-      });
-      
-      if (gmailRes.data.messages) {
-        for (const msg of gmailRes.data.messages) {
-          const { data: existing } = await supabase.from('email_inbox').select('id').eq('message_id', msg.id).maybeSingle();
-          if (existing) continue; // Skip if we already saved this exact email
+      try {
+        const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
+        oauth2Client.setCredentials({ access_token: tokenData.access_token, refresh_token: tokenData.refresh_token });
+        const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-          const msgData = await gmail.users.messages.get({ userId: 'me', id: msg.id! });
-          const headers = msgData.data.payload?.headers;
-          
-          await supabase.from('email_inbox').insert([{
-            organization_id: orgId,
-            account_email: tokenData.user_email,
-            message_id: msg.id,
-            sender: headers?.find(h => h.name === 'From')?.value || 'Unknown',
-            subject: headers?.find(h => h.name === 'Subject')?.value || 'No Subject',
-            snippet: msgData.data.snippet,
-            date: headers?.find(h => h.name === 'Date')?.value || new Date().toISOString()
-          }]);
-          totalSynced++;
+        // Fetch the last 30 emails (Removed strict inbox filter so it catches everything)
+        const gmailRes = await gmail.users.messages.list({ userId: 'me', maxResults: 30 });
+        
+        if (gmailRes.data.messages) {
+          for (const msg of gmailRes.data.messages) {
+            const { data: existing } = await supabase.from('email_inbox').select('id').eq('message_id', msg.id).maybeSingle();
+            if (existing) continue;
+
+            const msgData = await gmail.users.messages.get({ userId: 'me', id: msg.id! });
+            const headers = msgData.data.payload?.headers;
+            
+            await supabase.from('email_inbox').insert([{
+              organization_id: orgId,
+              account_email: tokenData.user_email,
+              message_id: msg.id,
+              sender: headers?.find(h => h.name === 'From')?.value || 'Unknown',
+              subject: headers?.find(h => h.name === 'Subject')?.value || 'No Subject',
+              snippet: msgData.data.snippet,
+              date: headers?.find(h => h.name === 'Date')?.value || new Date().toISOString()
+            }]);
+            totalSynced++;
+          }
         }
+      } catch (err: any) {
+        // If one account fails (e.g. expired token), log the error but don't crash the others!
+        syncErrors.push(`Failed to sync ${tokenData.user_email}: ${err.message}`);
       }
     }
 
-    return NextResponse.json({ connected: true, synced: totalSynced });
+    return NextResponse.json({ 
+      connected: true, 
+      synced: totalSynced, 
+      accounts: connectedAccounts, // Send the exact list of accounts back to the UI
+      errors: syncErrors 
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
