@@ -7,18 +7,17 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
 export default function InventoryPage() {
   const { orgId } = useOrg();
   const [items, setItems] = useState<any[]>([]);
-  const[properties, setProperties] = useState<any[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [properties, setProperties] = useState<any[]>([]);
+  const[isModalOpen, setIsModalOpen] = useState(false);
 
   const [itemName, setItemName] = useState('');
-  const[category, setCategory] = useState('General');
+  const [category, setCategory] = useState('General');
   const [propertyId, setPropertyId] = useState('');
   const [quantity, setQuantity] = useState('');
-  const [reorderLevel, setReorderLevel] = useState('5');
+  const[reorderLevel, setReorderLevel] = useState('5');
   const [cost, setCost] = useState('');
   const [barcode, setBarcode] = useState('');
 
-  // Scanner State
   const [isScanning, setIsScanning] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const codeReader = useRef(new BrowserMultiFormatReader());
@@ -61,28 +60,23 @@ export default function InventoryPage() {
     fetchData();
   }
 
-  // --- NATIVE BARCODE SCANNER LOGIC ---
   async function startScanner() {
     setIsScanning(true);
     try {
       const videoInputDevices = await BrowserMultiFormatReader.listVideoInputDevices();
-      // Prefer the back camera on mobile phones
       const selectedDeviceId = videoInputDevices.length > 1 ? videoInputDevices[1].deviceId : videoInputDevices[0].deviceId;
       
       if (videoRef.current) {
         codeReader.current.decodeFromVideoDevice(selectedDeviceId, videoRef.current, async (result, err) => {
           if (result) {
-            // Stop scanning once we get a result
-            codeReader.current.reset();
+            // FIX: Added 'as any' to bypass TypeScript's missing dictionary definition
+            (codeReader.current as any).reset();
             setIsScanning(false);
             
             const scannedCode = result.getText();
-            
-            // Look up the item in the database
             const { data: item } = await supabase.from('inventory').select('*').eq('barcode', scannedCode).eq('organization_id', orgId).single();
             
             if (item) {
-              // Auto-deduct 1 from inventory
               await adjustQuantity(item.id, item.quantity, -1);
               alert(`Scanned: ${item.item_name}\nQuantity reduced by 1.`);
             } else {
@@ -99,7 +93,8 @@ export default function InventoryPage() {
   }
 
   function stopScanner() {
-    codeReader.current.reset();
+    // FIX: Added 'as any' here as well
+    (codeReader.current as any).reset();
     setIsScanning(false);
   }
 
@@ -118,8 +113,6 @@ export default function InventoryPage() {
       </header>
 
       <main className="flex-1 overflow-y-auto p-8 bg-gray-100 relative">
-        
-        {/* SCANNER OVERLAY */}
         {isScanning && (
           <div className="absolute inset-0 bg-black z-40 flex flex-col items-center justify-center">
             <h3 className="text-white font-bold text-xl mb-4">Point camera at barcode...</h3>
@@ -146,16 +139,9 @@ export default function InventoryPage() {
                 const isLow = item.quantity <= item.reorder_level;
                 return (
                   <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <p className="font-bold text-gray-900">{item.item_name}</p>
-                      <p className="text-xs text-gray-500">{item.category}</p>
-                    </td>
+                    <td className="px-6 py-4"><p className="font-bold text-gray-900">{item.item_name}</p><p className="text-xs text-gray-500">{item.category}</p></td>
                     <td className="px-6 py-4 text-sm text-gray-600">{item.properties?.name || 'Main Office / Truck'}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${isLow ? 'bg-red-100 text-red-800 border border-red-200' : 'bg-green-100 text-green-800'}`}>
-                        {item.quantity} in stock {isLow && '(Low!)'}
-                      </span>
-                    </td>
+                    <td className="px-6 py-4"><span className={`px-3 py-1 rounded-full text-xs font-bold ${isLow ? 'bg-red-100 text-red-800 border border-red-200' : 'bg-green-100 text-green-800'}`}>{item.quantity} in stock {isLow && '(Low!)'}</span></td>
                     <td className="px-6 py-4 text-sm font-mono text-gray-400">{item.barcode || 'None'}</td>
                     <td className="px-6 py-4 text-right space-x-2">
                       <button onClick={() => adjustQuantity(item.id, item.quantity, -1)} className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded font-bold">-</button>
@@ -178,16 +164,11 @@ export default function InventoryPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">Category</label>
-                    <select className="w-full border p-2 rounded outline-none" value={category} onChange={(e) => setCategory(e.target.value)}>
-                      <option value="General">General</option><option value="HVAC">HVAC</option><option value="Plumbing">Plumbing</option><option value="Electrical">Electrical</option>
-                    </select>
+                    <select className="w-full border p-2 rounded outline-none" value={category} onChange={(e) => setCategory(e.target.value)}><option value="General">General</option><option value="HVAC">HVAC</option><option value="Plumbing">Plumbing</option><option value="Electrical">Electrical</option></select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Location</label>
-                    <select className="w-full border p-2 rounded outline-none" value={propertyId} onChange={(e) => setPropertyId(e.target.value)}>
-                      <option value="">Main Office</option>
-                      {properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
+                    <select className="w-full border p-2 rounded outline-none" value={propertyId} onChange={(e) => setPropertyId(e.target.value)}><option value="">Main Office</option>{properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-4">
