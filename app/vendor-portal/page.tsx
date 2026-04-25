@@ -96,6 +96,14 @@ export default function VendorPortal() {
             <span className="mr-2">📡</span> Job Board
             {openJobs.length > 0 && <span className="ml-2 bg-red-500 text-white px-2 py-0.5 rounded-full text-xs">{openJobs.length}</span>}
           </button>
+          {/* NEW TAB */}
+          <button onClick={() => setActiveTab('compliance')} className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'compliance' ? 'bg-white text-slate-900' : 'text-slate-300 hover:text-white'}`}>Compliance (W-9)</button>
+          <button onClick={() => setActiveTab('submit')} className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'submit' ? 'bg-white text-slate-900' : 'text-slate-300 hover:text-white'}`}>Submit Work</button>
+          <button onClick={() => setActiveTab('bids')} className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'bids' ? 'bg-white text-slate-900' : 'text-slate-300 hover:text-white'}`}>RFPs</button>
+          <button onClick={() => setActiveTab('jobs')} className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'jobs' ? 'bg-white text-slate-900' : 'text-slate-300 hover:text-white flex items-center'}`}>
+            <span className="mr-2">📡</span> Job Board
+            {openJobs.length > 0 && <span className="ml-2 bg-red-500 text-white px-2 py-0.5 rounded-full text-xs">{openJobs.length}</span>}
+          </button>
         </div>
       </div>
 
@@ -157,6 +165,44 @@ export default function VendorPortal() {
               </div>
             ))}
             {openJobs.length === 0 && <p className="text-center text-gray-500 py-8 border-2 border-dashed border-gray-200 rounded-xl">No open jobs available in your trade right now.</p>}
+          </div>
+        </div>
+      )}
+      {/* NEW: W-9 COMPLIANCE TAB */}
+      {activeTab === 'compliance' && (
+        <div className="p-8">
+          <div className="bg-white p-8 rounded-xl border border-gray-200 shadow-sm max-w-2xl mx-auto">
+            <h3 className="text-xl font-bold text-gray-800 mb-2">Tax Compliance (W-9)</h3>
+            <p className="text-sm text-gray-500 mb-6">Upload your IRS W-9 form. Our AI will securely extract your Tax ID for 1099 reporting.</p>
+            
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
+              <p className="text-sm font-medium text-gray-700">Current Status: <span className={`font-bold ${vendor.w9_on_file ? 'text-green-600' : 'text-red-600'}`}>{vendor.w9_on_file ? '✓ W-9 On File' : '⚠️ W-9 Required'}</span></p>
+              {vendor.tax_id && <p className="text-sm text-gray-500 mt-1">Tax ID ending in: ***-**-{vendor.tax_id.slice(-4)}</p>}
+            </div>
+
+            <label className={`w-full flex justify-center items-center py-4 rounded-lg font-bold text-white transition shadow-sm cursor-pointer ${isSubmitting ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'}`}>
+              {isSubmitting ? '🤖 Analyzing W-9...' : 'Upload W-9 PDF'}
+              <input type="file" accept=".pdf,image/*" className="hidden" disabled={isSubmitting} onChange={async (e) => {
+                const file = e.target.files?.[0]; if (!file) return;
+                setIsSubmitting(true);
+                try {
+                  const formData = new FormData(); formData.append('file', file);
+                  const res = await fetch('/api/scan-w9', { method: 'POST', body: formData });
+                  const data = await res.json();
+                  if (!res.ok) throw new Error(data.error);
+                  
+                  // Save to database
+                  await supabase.from('vendors').update({ 
+                    w9_on_file: true, 
+                    tax_id: data.tax_id, 
+                    legal_address: data.address 
+                  }).eq('id', vendor.id);
+                  
+                  alert("W-9 successfully processed and Tax ID securely stored!");
+                  window.location.reload();
+                } catch (err: any) { alert("Error: " + err.message); setIsSubmitting(false); }
+              }} />
+            </label>
           </div>
         </div>
       )}

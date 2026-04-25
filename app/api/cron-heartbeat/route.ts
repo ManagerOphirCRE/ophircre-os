@@ -120,6 +120,35 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ success: true, message: `Heartbeat ran successfully. Created ${tasksCreated} automated tasks and processed late fees.` });
   } catch (error: any) {
+    // 9. AI Dynamic Pricing Engine (YieldStar Clone)
+    const { data: activeListings } = await supabase.from('spaces').select('*, properties(id)').eq('is_listed', true);
+    
+    if (activeListings && activeListings.length > 0) {
+      // Calculate global portfolio occupancy
+      const { data: allSpaces } = await supabase.from('spaces').select('id');
+      const { data: allLeases } = await supabase.from('leases').select('id').eq('status', 'Active');
+      const occupancyRate = (allSpaces && allLeases && allSpaces.length > 0) ? (allLeases.length / allSpaces.length) * 100 : 0;
+
+      for (const space of activeListings) {
+        let newPrice = Number(space.listing_price || 0);
+        const daysOnMarket = Number(space.days_on_market || 0) + 1; // Increment days on market
+
+        // Algorithm Rules:
+        if (occupancyRate > 90 && daysOnMarket < 15) {
+          // High demand, fresh listing -> Bump price by 2%
+          newPrice = newPrice * 1.02;
+        } else if (daysOnMarket > 30) {
+          // Stale listing -> Drop price by 3% to drive velocity
+          newPrice = newPrice * 0.97;
+        }
+
+        // Update the database
+        await supabase.from('spaces').update({ 
+          listing_price: Math.round(newPrice), 
+          days_on_market: daysOnMarket 
+        }).eq('id', space.id);
+      }
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
