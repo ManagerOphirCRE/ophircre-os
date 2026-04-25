@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const code = searchParams.get('code');
-    const state = searchParams.get('state'); // This is the orgId we passed!
+    const state = searchParams.get('state'); 
     
     if (!code) throw new Error("No code provided");
 
@@ -21,17 +21,23 @@ export async function GET(req: Request) {
     const userEmail = profile.data.emailAddress?.toLowerCase();
 
     if (userEmail) {
-      // 1. Delete any old, broken tokens for this email
-      await supabase.from('google_tokens').delete().eq('user_email', userEmail);
-
-      // 2. Insert the fresh token WITH the organization_id explicitly attached
-      await supabase.from('google_tokens').insert([{
+      // FIX: Manually check if the account exists to prevent database constraint errors
+      const { data: existing } = await supabase.from('google_tokens').select('id, refresh_token').eq('user_email', userEmail).maybeSingle();
+      
+      const payload = {
         user_email: userEmail,
         access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
+        // Google only sends a refresh token on the VERY first login. We must preserve the old one if it exists!
+        refresh_token: tokens.refresh_token || existing?.refresh_token, 
         expiry_date: tokens.expiry_date,
         organization_id: state && state !== 'null' ? state : null
-      }]);
+      };
+
+      if (existing) {
+        await supabase.from('google_tokens').update(payload).eq('id', existing.id);
+      } else {
+        await supabase.from('google_tokens').insert([payload]);
+      }
     }
     
     return NextResponse.redirect(`https://app.ophircre.com/workspace?connected=true`);

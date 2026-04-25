@@ -10,7 +10,6 @@ export async function GET(req: Request) {
     const orgId = searchParams.get('orgId');
     if (!orgId || orgId === 'null') throw new Error("Org ID required");
 
-    // Fetch ALL connected Google accounts for this organization
     const { data: tokens } = await supabase.from('google_tokens').select('*').eq('organization_id', orgId);
     if (!tokens || tokens.length === 0) return NextResponse.json({ connected: false });
 
@@ -18,21 +17,27 @@ export async function GET(req: Request) {
 
     for (const tokenData of tokens) {
       const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
-      oauth2Client.setCredentials({ access_token: tokenData.access_token, refresh_token: tokenData.refresh_token });
+      oauth2Client.setCredentials({ 
+        access_token: tokenData.access_token, 
+        refresh_token: tokenData.refresh_token 
+      });
       const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-      // Fetch the last 15 emails
-      const gmailRes = await gmail.users.messages.list({ userId: 'me', maxResults: 15 });
+      // FIX: Increased limit to 50 and forced it to look specifically in the Inbox
+      const gmailRes = await gmail.users.messages.list({ 
+        userId: 'me', 
+        maxResults: 50,
+        q: 'in:inbox' 
+      });
       
       if (gmailRes.data.messages) {
         for (const msg of gmailRes.data.messages) {
-          const { data: existing } = await supabase.from('email_inbox').select('id').eq('message_id', msg.id).single();
-          if (existing) continue;
+          const { data: existing } = await supabase.from('email_inbox').select('id').eq('message_id', msg.id).maybeSingle();
+          if (existing) continue; // Skip if we already saved this exact email
 
           const msgData = await gmail.users.messages.get({ userId: 'me', id: msg.id! });
           const headers = msgData.data.payload?.headers;
           
-          // Save to database WITH the organization_id
           await supabase.from('email_inbox').insert([{
             organization_id: orgId,
             account_email: tokenData.user_email,
