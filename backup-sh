@@ -1,0 +1,25 @@
+#!/bin/bash
+# OphirCRE Monthly Physical Backup Script
+
+DATE=$(date +%Y-%m-%d)
+BACKUP_DIR="./ophircre_backups/backup_$DATE"
+
+echo "🚀 Starting OphirCRE Database & Storage Backup..."
+mkdir -p "$BACKUP_DIR"
+
+# 1. Dump the PostgreSQL Database
+echo "📦 Exporting Database..."
+docker exec -t ophircre-os-supabase-db-1 pg_dumpall -c -U postgres > "$BACKUP_DIR/database_dump.sql"
+
+# 2. Copy the Storage Bucket (PDFs, Images, Leases)
+echo "📂 Copying Filing Cabinet & Marketing Files..."
+docker cp ophircre-os-supabase-storage-1:/var/lib/storage "$BACKUP_DIR/files"
+
+# 3. Compress into a single ZIP file for the USB Drive
+echo "🗜️ Compressing backup..."
+tar -czvf "OphirCRE_Master_Backup_$DATE.tar.gz" "$BACKUP_DIR"
+
+# Cleanup uncompressed folder
+rm -rf "$BACKUP_DIR"
+
+echo "✅ Backup Complete! You can now drag OphirCRE_Master_Backup_$DATE.tar.gz to your external hard drive."

@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # 1. The Next.js Web Server (OphirCRE OS)
+  ophircre-web:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_SUPABASE_URL=http://supabase-kong:8000
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+    depends_on:
+      - supabase-db
+
+  # 2. The Local Supabase PostgreSQL Database
+  supabase-db:
+    image: supabase/postgres:15.1.0.117
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # 3. Local Supabase Storage (For your Filing Cabinet & Marketing Photos)
+  supabase-storage:
+    image: supabase/storage-api:v0.43.11
+    ports:
+      - "5000:5000"
+    environment:
+      - DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+      - FILE_SIZE_LIMIT=52428800 # 50MB limit
+      - STORAGE_BACKEND=file
+      - FILE_STORAGE_BACKEND_PATH=/var/lib/storage
+    volumes:
+      - storage-data:/var/lib/storage
+    depends_on:
+      - supabase-db
+
+volumes:
+  db-data:
+  storage-data:
