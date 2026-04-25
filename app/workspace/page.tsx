@@ -9,16 +9,15 @@ export default function WorkspacePage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
-  const [emails, setEmails] = useState<any[]>([]);
+  const[emails, setEmails] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<string[]>([]);
   const [selectedAccount, setSelectedAccount] = useState('ALL');
   
-  const [properties, setProperties] = useState<any[]>([]);
+  const[properties, setProperties] = useState<any[]>([]);
   const [taskModalEmail, setTaskModalEmail] = useState<any>(null);
   const [selectedPropertyId, setSelectedPropertyId] = useState('');
 
-  // NEW: Error State to catch Google's complaints
-  const [syncError, setSyncError] = useState<string | null>(null);
+  const[syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     if (orgId) {
@@ -36,30 +35,37 @@ export default function WorkspacePage() {
     setIsLoading(true);
     setSyncError(null);
     try {
-      // 1. Check if we have tokens in the database first
-      const { data: tokens } = await supabase.from('google_tokens').select('*').eq('organization_id', orgId);
+      // 1. Check if we have tokens in the database for this organization
+      const { data: tokens, error: tokenErr } = await supabase.from('google_tokens').select('*').eq('organization_id', orgId);
       
+      if (tokenErr) throw new Error("Database error checking tokens: " + tokenErr.message);
+
       if (tokens && tokens.length > 0) {
         setIsGoogleConnected(true);
         
-        // 2. Fetch existing emails from database so the UI isn't empty
-        const { data: dbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
-        if (dbEmails) {
-          setEmails(dbEmails);
-          const uniqueAccounts = Array.from(new Set(dbEmails.map(e => e.account_email)));
-          setAccounts(uniqueAccounts as string[]);
-        }
+        // FIX: Populate the dropdown directly from the connected tokens, NOT the emails!
+        const connectedEmails = tokens.map(t => t.user_email);
+        setAccounts(connectedEmails);
 
-        // 3. Ping the API to sync NEW emails
+        // 2. Fetch existing emails from database
+        const { data: dbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
+        if (dbEmails) setEmails(dbEmails);
+
+        // 3. Ping the API to sync NEW emails in the background
         const res = await fetch(`/api/google-workspace?orgId=${orgId}`);
         const data = await res.json();
         
         if (data.error) {
-          setSyncError(data.error); // Catch the Google Error!
+          setSyncError(`Google API Error: ${data.error}. (Did you check the permission boxes on the Google login screen?)`);
         } else if (data.synced > 0) {
-          // Refresh if new emails were found
           const { data: newDbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
           if (newDbEmails) setEmails(newDbEmails);
+        }
+      } else {
+        // DIAGNOSTIC: Check if tokens exist but are missing the orgId
+        const { data: allTokens } = await supabase.from('google_tokens').select('*');
+        if (allTokens && allTokens.length > 0) {
+          setSyncError(`Diagnostic: Found ${allTokens.length} Google accounts in the database, but they are not linked to your Organization ID. Please click Authenticate below to reconnect them.`);
         }
       }
     } catch (e: any) {
@@ -77,7 +83,7 @@ export default function WorkspacePage() {
       const data = await res.json();
       
       if (data.error) {
-        setSyncError(data.error);
+        setSyncError(`Google API Error: ${data.error}`);
       } else {
         alert(`Sync complete! Found ${data.synced || 0} new emails.`);
         const { data: dbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
@@ -91,6 +97,7 @@ export default function WorkspacePage() {
   }
 
   async function connectNewGoogleAccount() {
+    if (!orgId) return alert("Organization ID is missing. Please refresh the page.");
     try {
       const res = await fetch(`/api/google-auth?state=${orgId}`);
       const data = await res.json();
@@ -139,12 +146,10 @@ export default function WorkspacePage() {
 
       <main className="flex-1 overflow-y-auto p-8 bg-gray-100">
         
-        {/* DIAGNOSTIC ERROR BOX */}
         {syncError && (
           <div className="mb-8 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm">
-            <h3 className="text-red-800 font-bold">Google API Error Detected:</h3>
+            <h3 className="text-red-800 font-bold">Diagnostic Alert:</h3>
             <p className="text-red-600 font-mono text-sm mt-1">{syncError}</p>
-            <p className="text-sm text-gray-600 mt-2">If this says "Gmail API has not been used", you need to go to console.cloud.google.com and click "Enable" for the Gmail API!</p>
           </div>
         )}
 
@@ -156,6 +161,7 @@ export default function WorkspacePage() {
             <button onClick={connectNewGoogleAccount} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold transition shadow-sm text-lg">
               Authenticate with Google
             </button>
+            <p className="text-xs text-red-500 font-bold mt-4">IMPORTANT: When Google asks for permissions, you MUST check the boxes to allow reading emails and managing tasks!</p>
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[calc(100vh-150px)]">
@@ -163,8 +169,8 @@ export default function WorkspacePage() {
             <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center rounded-t-xl">
               <div className="flex items-center space-x-4">
                 <h3 className="font-bold text-gray-800 flex items-center"><span className="mr-2">📥</span> Unified Inbox</h3>
-                <select className="border p-1 rounded text-sm outline-none bg-white" value={selectedAccount} onChange={(e) => setSelectedAccount(e.target.value)}>
-                  <option value="ALL">All Accounts</option>
+                <select className="border p-1 rounded text-sm outline-none bg-white font-bold text-blue-600" value={selectedAccount} onChange={(e) => setSelectedAccount(e.target.value)}>
+                  <option value="ALL">All Connected Accounts</option>
                   {accounts.map(acc => <option key={acc} value={acc}>{acc}</option>)}
                 </select>
               </div>
