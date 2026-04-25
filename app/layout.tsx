@@ -42,6 +42,8 @@ const NAV_LINKS =[
   { name: 'Deposits', path: '/deposits', allowed: ['admin', 'accountant'] },
   { name: 'Payables', path: '/accounts-payable', allowed:['admin', 'accountant'] },
   { name: '1099 Ledger', path: '/vendor-ledger', allowed: ['admin', 'accountant'] },
+  { name: 'RUBS Calculator', path: '/rubs', allowed: ['admin', 'accountant'] },
+  { name: 'CapEx Projects', path: '/projects', allowed: ['admin', 'manager'] },
   { name: 'Settings', path: '/settings', allowed:['admin'] },
   { name: '🗑️ Trash Bin', path: '/trash', allowed: ['admin'] },
   { name: '👑 Super Admin', path: '/super-admin', allowed:['super_admin'] }
