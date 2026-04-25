@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: 'com.ophircre.app',
   appName: 'OphirCRE',
   webDir: 'out', // Next.js static export directory
-  bundledWebRuntime: false,
   server: {
     // This allows the native app to talk to your live Vercel/Supabase servers
     hostname: 'app.ophircre.com',
