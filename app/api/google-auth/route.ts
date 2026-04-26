@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const state = searchParams.get('state'); // Grab the orgId
+    const state = searchParams.get('state'); 
 
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
@@ -23,8 +23,9 @@ export async function GET(req: Request) {
     const url = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: scopes,
-      prompt: 'consent',
-      state: state || 'missing_org' // FIX: Ensure it is never blank
+      // FIX: This forces Google to show the "Choose an Account" screen every time!
+      prompt: 'consent select_account', 
+      state: state || 'missing_org'
     });
 
     return NextResponse.json({ url });

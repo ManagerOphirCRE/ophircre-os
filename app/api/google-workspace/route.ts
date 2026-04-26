@@ -27,17 +27,17 @@ export async function GET(req: Request) {
         oauth2Client.setCredentials({ access_token: tokenData.access_token, refresh_token: tokenData.refresh_token });
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-        // FIX: Increased limit to 50 and forced it to look ONLY in the Inbox!
+        // FIX: Query for UNREAD messages so it grabs actionable items, not old junk
         const gmailRes = await gmail.users.messages.list({ 
           userId: 'me', 
-          maxResults: 50,
-          q: 'in:inbox' 
+          maxResults: 30,
+          q: 'is:unread' 
         });
         
         if (gmailRes.data.messages) {
           for (const msg of gmailRes.data.messages) {
-            const { data: existing } = await supabase.from('email_inbox').select('id').eq('message_id', msg.id).maybeSingle();
-            if (existing) continue;
+            const { data: existing } = await supabase.from('email_inbox').select('id').eq('message_id', msg.id).limit(1);
+            if (existing && existing.length > 0) continue;
 
             const msgData = await gmail.users.messages.get({ userId: 'me', id: msg.id! });
             const headers = msgData.data.payload?.headers;
