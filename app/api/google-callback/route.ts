@@ -4,10 +4,18 @@ import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
-
 export async function GET(req: Request) {
   try {
+    // FIX: Moving this INSIDE the function guarantees Vercel reads the live Environment Variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new Error(`Missing Supabase Keys in Vercel! URL exists: ${!!supabaseUrl}, Key exists: ${!!serviceRoleKey}`);
+    }
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+
     const { searchParams } = new URL(req.url);
     const code = searchParams.get('code');
     const state = searchParams.get('state'); 
