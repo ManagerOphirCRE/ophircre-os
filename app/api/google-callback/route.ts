@@ -27,8 +27,9 @@ export async function GET(req: Request) {
     if (userEmail) {
       const orgId = (state && state !== 'missing_org' && state !== 'null') ? state : null;
 
-      // FIX: Use .limit(1) to prevent database crashes if ghost tokens exist
-      const { data: existingRecords } = await supabase.from('google_tokens').select('id, refresh_token').eq('user_email', userEmail).limit(1);
+      const { data: existingRecords, error: fetchErr } = await supabase.from('google_tokens').select('id, refresh_token').eq('user_email', userEmail).limit(1);
+      if (fetchErr) throw new Error("DB Fetch Error: " + fetchErr.message);
+      
       const existing = existingRecords?.[0];
       
       const payload = {
@@ -40,9 +41,11 @@ export async function GET(req: Request) {
       };
 
       if (existing) {
-        await supabase.from('google_tokens').update(payload).eq('id', existing.id);
+        const { error: updateErr } = await supabase.from('google_tokens').update(payload).eq('id', existing.id);
+        if (updateErr) throw new Error("DB Update Error: " + updateErr.message);
       } else {
-        await supabase.from('google_tokens').insert([payload]);
+        const { error: insertErr } = await supabase.from('google_tokens').insert([payload]);
+        if (insertErr) throw new Error("DB Insert Error: " + insertErr.message);
       }
     }
     

@@ -27,11 +27,10 @@ export async function GET(req: Request) {
         oauth2Client.setCredentials({ access_token: tokenData.access_token, refresh_token: tokenData.refresh_token });
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-        // FIX: Query for UNREAD messages so it grabs actionable items, not old junk
+        // FIX: Removed the 'q: is:unread' filter so it pulls the 50 newest emails regardless of read status
         const gmailRes = await gmail.users.messages.list({ 
           userId: 'me', 
-          maxResults: 30,
-          q: 'is:unread' 
+          maxResults: 50
         });
         
         if (gmailRes.data.messages) {
