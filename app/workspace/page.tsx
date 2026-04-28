@@ -6,27 +6,27 @@ import { useOrg } from '@/app/context/OrgContext';
 export default function WorkspacePage() {
   const { orgId } = useOrg();
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
-  const[isSyncing, setIsSyncing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
   const [emails, setEmails] = useState<any[]>([]);
   const[accounts, setAccounts] = useState<string[]>([]);
   const [selectedAccount, setSelectedAccount] = useState('ALL');
-  const [sortOrder, setSortOrder] = useState('newest'); // NEW: Sorting State
+  const [sortOrder, setSortOrder] = useState('newest');
   
   const[properties, setProperties] = useState<any[]>([]);
   const [taskModalEmail, setTaskModalEmail] = useState<any>(null);
   const [selectedPropertyId, setSelectedPropertyId] = useState('');
   const[syncError, setSyncError] = useState<string | null>(null);
 
-  // NEW: Read & Compose State
-  const[viewingEmail, setViewingEmail] = useState<any>(null);
-  const[isComposing, setIsComposing] = useState(false);
+  const [viewingEmail, setViewingEmail] = useState<any>(null);
+  const [isComposing, setIsComposing] = useState(false);
   const [composeFrom, setComposeFrom] = useState('');
   const [composeTo, setComposeTo] = useState('');
-  const [composeSubject, setComposeSubject] = useState('');
-  const[composeBody, setComposeBody] = useState('');
-  const [isSending, setIsSending] = useState(false);
+  const[composeSubject, setComposeSubject] = useState('');
+  const [composeBody, setComposeBody] = useState('');
+  const[isSending, setIsSending] = useState(false);
+  const [isActioning, setIsActioning] = useState(false);
 
   useEffect(() => {
     if (orgId) { fetchProperties(); checkConnectionAndSync(); }
@@ -45,7 +45,7 @@ export default function WorkspacePage() {
         setIsGoogleConnected(true);
         const connectedEmails = tokens.map(t => t.user_email);
         setAccounts(connectedEmails);
-        if (connectedEmails.length > 0) setComposeFrom(connectedEmails[0]); // Default sender
+        if (connectedEmails.length > 0) setComposeFrom(connectedEmails[0]);
 
         const { data: dbEmails } = await supabase.from('email_inbox').select('*').order('created_at', { ascending: false });
         if (dbEmails) setEmails(dbEmails);
@@ -94,8 +94,7 @@ export default function WorkspacePage() {
   }
 
   async function sendGmail(e: any) {
-    e.preventDefault();
-    setIsSending(true);
+    e.preventDefault(); setIsSending(true);
     try {
       const res = await fetch('/api/google-send-email', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -108,7 +107,33 @@ export default function WorkspacePage() {
     } catch (error: any) { alert("Send Error: " + error.message); } finally { setIsSending(false); }
   }
 
-  // SORTING LOGIC
+  // NEW: 2-Way Sync Actions
+  async function handleEmailAction(action: string) {
+    if (!viewingEmail) return;
+    setIsActioning(true);
+    try {
+      const res = await fetch('/api/google-action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId, emailAccount: viewingEmail.account_email, messageId: viewingEmail.message_id, action })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      if (action === 'archive' || action === 'trash') {
+        setEmails(emails.filter(e => e.id !== viewingEmail.id));
+        setViewingEmail(null);
+      } else {
+        alert("Email marked as read in Gmail!");
+      }
+    } catch (error: any) {
+      alert("Action Error: " + error.message);
+    } finally {
+      setIsActioning(false);
+    }
+  }
+
+  function openComposeModal() { setComposeTo(''); setComposeSubject(''); setComposeBody(''); setIsComposing(true); }
+
   let filteredEmails = selectedAccount === 'ALL' ? [...emails] : emails.filter(e => e.account_email === selectedAccount);
   if (sortOrder === 'oldest') filteredEmails = filteredEmails.reverse();
   if (sortOrder === 'sender') filteredEmails = filteredEmails.sort((a, b) => a.sender.localeCompare(b.sender));
@@ -121,16 +146,9 @@ export default function WorkspacePage() {
         <h2 className="text-xl font-semibold text-gray-800">Unified Inbox & Workspace</h2>
         {isGoogleConnected && (
           <div className="flex space-x-3">
-            <button onClick={() => setIsComposing(true)} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md font-medium transition shadow-sm">
-              ✏️ Compose
-            </button>
-            <button onClick={manualSync} disabled={isSyncing} className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-md font-medium transition">
-              {isSyncing ? '🔄 Syncing...' : '🔄 Sync Now'}
-            </button>
-            <button onClick={connectNewGoogleAccount} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition shadow-sm flex items-center">
-              <span className="mr-2 bg-white text-blue-600 rounded-full w-5 h-5 flex items-center justify-center font-bold text-xs">G</span>
-              + Add Account
-            </button>
+            <button onClick={openComposeModal} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md font-medium transition shadow-sm">✏️ Compose</button>
+            <button onClick={manualSync} disabled={isSyncing} className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-md font-medium transition">{isSyncing ? '🔄 Syncing...' : '🔄 Sync Now'}</button>
+            <button onClick={connectNewGoogleAccount} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition shadow-sm flex items-center"><span className="mr-2 bg-white text-blue-600 rounded-full w-5 h-5 flex items-center justify-center font-bold text-xs">G</span>+ Add Account</button>
           </div>
         )}
       </header>
@@ -150,9 +168,7 @@ export default function WorkspacePage() {
                   {accounts.map(acc => <option key={acc} value={acc}>{acc}</option>)}
                 </select>
                 <select className="border p-1 rounded text-sm outline-none bg-white text-gray-600" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
-                  <option value="newest">Sort: Newest First</option>
-                  <option value="oldest">Sort: Oldest First</option>
-                  <option value="sender">Sort: By Sender</option>
+                  <option value="newest">Sort: Newest First</option><option value="oldest">Sort: Oldest First</option><option value="sender">Sort: By Sender</option>
                 </select>
               </div>
               <span className="text-xs text-gray-500 font-medium">{filteredEmails.length} messages saved</span>
@@ -176,10 +192,10 @@ export default function WorkspacePage() {
           </div>
         )}
 
-        {/* READ EMAIL MODAL */}
+        {/* READ EMAIL MODAL WITH 2-WAY SYNC BUTTONS */}
         {viewingEmail && (
           <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40 p-4">
-            <div className="bg-white rounded-xl shadow-lg w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="bg-white rounded-xl shadow-lg w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
               <div className="p-6 border-b flex justify-between items-start bg-gray-50">
                 <div>
                   <h3 className="text-xl font-bold text-gray-900 mb-2">{viewingEmail.subject}</h3>
@@ -188,7 +204,10 @@ export default function WorkspacePage() {
                   <p className="text-xs text-gray-400 mt-1">{new Date(viewingEmail.date).toLocaleString()}</p>
                 </div>
                 <div className="flex space-x-2">
-                  <button onClick={() => { setTaskModalEmail(viewingEmail); setViewingEmail(null); }} className="bg-orange-100 text-orange-700 px-4 py-2 rounded font-bold text-sm">⚡ Task</button>
+                  <button onClick={() => handleEmailAction('mark_read')} disabled={isActioning} className="bg-gray-200 text-gray-700 px-3 py-2 rounded font-bold text-xs hover:bg-gray-300">Mark Read</button>
+                  <button onClick={() => handleEmailAction('archive')} disabled={isActioning} className="bg-gray-200 text-gray-700 px-3 py-2 rounded font-bold text-xs hover:bg-gray-300">Archive</button>
+                  <button onClick={() => handleEmailAction('trash')} disabled={isActioning} className="bg-red-100 text-red-700 px-3 py-2 rounded font-bold text-xs hover:bg-red-200">Trash</button>
+                  <button onClick={() => { setTaskModalEmail(viewingEmail); setViewingEmail(null); }} className="bg-orange-100 text-orange-700 px-4 py-2 rounded font-bold text-sm ml-2">⚡ Task</button>
                   <button onClick={() => { setComposeTo(viewingEmail.sender.match(/<(.+)>/)?.[1] || viewingEmail.sender); setComposeSubject(`Re: ${viewingEmail.subject}`); setComposeFrom(viewingEmail.account_email); setIsComposing(true); setViewingEmail(null); }} className="bg-blue-100 text-blue-700 px-4 py-2 rounded font-bold text-sm">Reply</button>
                   <button onClick={() => setViewingEmail(null)} className="text-gray-400 hover:text-gray-800 text-2xl ml-4">&times;</button>
                 </div>
@@ -197,14 +216,13 @@ export default function WorkspacePage() {
                 {viewingEmail.body_html ? (
                   <div dangerouslySetInnerHTML={{ __html: viewingEmail.body_html }} className="prose max-w-none text-sm" />
                 ) : (
-                  <p className="text-gray-600 whitespace-pre-wrap text-sm">{viewingEmail.snippet}\n\n(Full HTML body not available for older synced emails. Click 'Sync Now' to pull full bodies for new emails).</p>
+                  <p className="text-gray-600 whitespace-pre-wrap text-sm">{viewingEmail.snippet}</p>
                 )}
               </div>
             </div>
           </div>
         )}
 
-        {/* COMPOSE EMAIL MODAL */}
         {isComposing && (
           <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl">
@@ -223,7 +241,6 @@ export default function WorkspacePage() {
           </div>
         )}
 
-        {/* CREATE TASK MODAL */}
         {taskModalEmail && (
           <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
