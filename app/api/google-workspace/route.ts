@@ -5,19 +5,32 @@ import { createClient } from '@supabase/supabase-js';
 export const dynamic = 'force-dynamic';
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
-function getEmailBody(payload: any): string {
-  let encodedBody = '';
-  if (payload.parts) {
+// FIX: A robust, recursive extractor that prevents double-decoding on nested email threads
+function extractBase64Data(payload: any): string {
+  if (!payload) return '';
+  if (payload.mimeType === 'text/html' && payload.body?.data) return payload.body.data;
+  if (payload.mimeType === 'text/plain' && payload.body?.data) return payload.body.data;
+  
+  if (payload.parts && payload.parts.length > 0) {
+    let textData = '';
     for (const part of payload.parts) {
-      if (part.mimeType === 'text/html') encodedBody = part.body.data;
-      else if (part.mimeType === 'text/plain' && !encodedBody) encodedBody = part.body.data;
-      else if (part.parts) encodedBody = getEmailBody(part); 
+      if (part.mimeType === 'text/html' && part.body?.data) return part.body.data;
+      if (part.mimeType === 'text/plain' && part.body?.data) textData = part.body.data;
+      if (part.parts) {
+        const nested = extractBase64Data(part);
+        if (nested) return nested;
+      }
     }
-  } else {
-    encodedBody = payload.body?.data || '';
+    if (textData) return textData;
   }
-  if (!encodedBody) return '';
-  return Buffer.from(encodedBody.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8');
+  return payload.body?.data || '';
+}
+
+function getEmailBody(payload: any): string {
+  const base64Data = extractBase64Data(payload);
+  if (!base64Data) return '';
+  // Decode the Base64URL string exactly ONE time
+  return Buffer.from(base64Data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8');
 }
 
 export async function GET(req: Request) {
@@ -49,7 +62,6 @@ export async function GET(req: Request) {
             const headers = msgData.data.payload?.headers;
             const fullBody = getEmailBody(msgData.data.payload);
             
-            // FIX: Use Google's strict internal timestamp to guarantee perfect sorting
             const internalDate = msgData.data.internalDate;
             const strictIsoDate = internalDate ? new Date(Number(internalDate)).toISOString() : new Date().toISOString();
             
@@ -58,7 +70,7 @@ export async function GET(req: Request) {
               sender: headers?.find(h => h.name === 'From')?.value || 'Unknown',
               subject: headers?.find(h => h.name === 'Subject')?.value || 'No Subject',
               snippet: msgData.data.snippet, body_html: fullBody,
-              date: strictIsoDate // Saved as perfect ISO string
+              date: strictIsoDate
             }]);
             totalSynced++;
           }
