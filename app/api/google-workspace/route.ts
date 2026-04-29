@@ -3,10 +3,8 @@ import { google } from 'googleapis';
 import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
-
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
-// Helper to decode Google's Base64URL email bodies
 function getEmailBody(payload: any): string {
   let encodedBody = '';
   if (payload.parts) {
@@ -40,23 +38,27 @@ export async function GET(req: Request) {
         oauth2Client.setCredentials({ access_token: tokenData.access_token, refresh_token: tokenData.refresh_token });
         const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-        const gmailRes = await gmail.users.messages.list({ userId: 'me', maxResults: 30, q: 'is:unread' });
+        const gmailRes = await gmail.users.messages.list({ userId: 'me', maxResults: 50 });
         
         if (gmailRes.data.messages) {
           for (const msg of gmailRes.data.messages) {
-            const { data: existing } = await supabase.from('email_inbox').select('id').eq('message_id', msg.id).limit(1);
-            if (existing && existing.length > 0) continue;
+            const { data: existing } = await supabase.from('email_inbox').select('id').eq('message_id', msg.id).maybeSingle();
+            if (existing) continue;
 
             const msgData = await gmail.users.messages.get({ userId: 'me', id: msg.id! });
             const headers = msgData.data.payload?.headers;
             const fullBody = getEmailBody(msgData.data.payload);
+            
+            // FIX: Use Google's strict internal timestamp to guarantee perfect sorting
+            const internalDate = msgData.data.internalDate;
+            const strictIsoDate = internalDate ? new Date(Number(internalDate)).toISOString() : new Date().toISOString();
             
             await supabase.from('email_inbox').insert([{
               organization_id: orgId, account_email: tokenData.user_email, message_id: msg.id,
               sender: headers?.find(h => h.name === 'From')?.value || 'Unknown',
               subject: headers?.find(h => h.name === 'Subject')?.value || 'No Subject',
               snippet: msgData.data.snippet, body_html: fullBody,
-              date: headers?.find(h => h.name === 'Date')?.value || new Date().toISOString()
+              date: strictIsoDate // Saved as perfect ISO string
             }]);
             totalSynced++;
           }
