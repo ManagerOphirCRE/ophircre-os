@@ -19,36 +19,33 @@ export default function PropertyProfilePage() {
   const [property, setProperty] = useState<any>(null);
   const [spaces, setSpaces] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
-  const[isSaving, setIsSaving] = useState(false);
-  const [isSelling, setIsSelling] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const[isSelling, setIsSelling] = useState(false);
   const [activeTab, setActiveTab] = useState('details');
 
-  const [name, setName] = useState(''); const [address, setAddress] = useState(''); const [sqft, setSqft] = useState('');
+  const[name, setName] = useState(''); const [address, setAddress] = useState(''); const[sqft, setSqft] = useState('');
   const [lat, setLat] = useState<number | null>(null); const [lng, setLng] = useState<number | null>(null);
-  const [landlordName, setLandlordName] = useState(''); const[landlordEmail, setLandlordEmail] = useState('');
-  const [landlordPhone, setLandlordPhone] = useState(''); const [landlordAddress, setLandlordAddress] = useState('');
+  const [landlordName, setLandlordName] = useState(''); const [landlordEmail, setLandlordEmail] = useState('');
+  const[landlordPhone, setLandlordPhone] = useState(''); const [landlordAddress, setLandlordAddress] = useState('');
   const [purchasePrice, setPurchasePrice] = useState(''); const [currentValue, setCurrentValue] = useState('');
-  const[mortgageBalance, setMortgageBalance] = useState(''); const [interestRate, setInterestRate] = useState('');
+  const [mortgageBalance, setMortgageBalance] = useState(''); const [interestRate, setInterestRate] = useState('');
 
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [newSpaceName, setNewSpaceName] = useState(''); const [newSpaceSqft, setNewSpaceSqft] = useState(''); const [newSpaceType, setNewSpaceType] = useState('physical');
+  const[suggestions, setSuggestions] = useState<any[]>([]);
+  const [newSpaceName, setNewSpaceName] = useState(''); const[newSpaceSqft, setNewSpaceSqft] = useState(''); const [newSpaceType, setNewSpaceType] = useState('physical');
 
   const[isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState('');
+  const [searchTimeout, setSearchTimeout] = useState<any>(null);
 
   useEffect(() => {
     let isMounted = true;
-
     async function fetchPropertyData() {
       if (!propertyId) return; 
-      
-      setIsLoading(true);
-      setFetchError('');
-
+      setIsLoading(true); setFetchError('');
       try {
         const { data: pData, error: pErr } = await supabase.from('properties').select('*').eq('id', propertyId).maybeSingle();
         if (pErr) throw pErr;
-        if (!pData) throw new Error("Property not found. It may have been deleted or blocked by security rules.");
+        if (!pData) throw new Error("Property not found.");
         
         if (isMounted) {
           setProperty(pData); setName(pData.name || ''); setAddress(pData.address || ''); setSqft(pData.total_sqft || '');
@@ -64,30 +61,44 @@ export default function PropertyProfilePage() {
         
         const { data: aData } = await supabase.from('property_assets').select('*').eq('property_id', propertyId);
         if (aData && isMounted) setAssets(aData);
-
       } catch (error: any) {
         if (isMounted) setFetchError(error.message);
       } finally {
         if (isMounted) setIsLoading(false);
       }
     }
-    
     fetchPropertyData();
     return () => { isMounted = false; };
-  }, [propertyId]); // FIX: Removed orgId from dependencies so it doesn't block the page load!
+  }, [propertyId]);
 
   async function handleAddressSearch(query: string) {
     setAddress(query);
     if (query.length < 5) return setSuggestions([]);
-    try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=us&limit=5`);
-      const data = await res.json();
-      setSuggestions(data);
-    } catch (e) { console.error(e); }
+    if (searchTimeout) clearTimeout(searchTimeout);
+    
+    // Debounce to prevent OpenStreetMap IP Ban
+    const timeout = setTimeout(async () => {
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=us&limit=5`, {
+          headers: { 'Accept-Language': 'en-US,en;q=0.9' }
+        });
+        const data = await res.json();
+        setSuggestions(data);
+      } catch (e) { console.error(e); }
+    }, 800);
+    setSearchTimeout(timeout);
   }
 
   function selectAddress(item: any) {
     setAddress(item.display_name); setLat(Number(item.lat)); setLng(Number(item.lon)); setSuggestions([]);
+  }
+
+  function MapUpdater({ lat, lng }: { lat: number, lng: number }) {
+    const map = useMapEvents({});
+    useEffect(() => {
+      if (lat && lng) map.flyTo([lat, lng], 19, { animate: true, duration: 1.5 });
+    }, [lat, lng, map]);
+    return null;
   }
 
   async function savePropertyDetails() {
@@ -105,25 +116,19 @@ export default function PropertyProfilePage() {
   async function sellProperty() {
     if (!confirm(`WARNING: Are you sure you want to mark ${property?.name} as SOLD?\n\nThis will permanently terminate all active leases in this building, mark the tenants as 'Past', and archive the property so the Auto-Biller stops charging them.`)) return;
     setIsSelling(true);
-
     try {
       const spaceIds = spaces.map(s => s.id);
       const { data: activeLeases } = await supabase.from('leases').select('id, tenant_id').in('space_id', spaceIds).eq('status', 'Active');
-
       if (activeLeases && activeLeases.length > 0) {
         const leaseIds = activeLeases.map(l => l.id);
         const tenantIds = activeLeases.map(l => l.tenant_id);
         await supabase.from('leases').update({ status: 'Terminated', end_date: new Date().toISOString().split('T')[0] }).in('id', leaseIds);
         await supabase.from('tenants').update({ status: 'past' }).in('id', tenantIds);
       }
-
       await supabase.from('properties').update({ is_deleted: true }).eq('id', propertyId);
-      alert("Property successfully marked as Sold. All leases have been terminated and tenants archived.");
+      alert("Property successfully marked as Sold.");
       router.push('/properties');
-    } catch (error: any) {
-      alert("Disposition Error: " + error.message);
-      setIsSelling(false);
-    }
+    } catch (error: any) { alert("Disposition Error: " + error.message); setIsSelling(false); }
   }
 
   async function addSpace(e: any) {
@@ -166,23 +171,13 @@ export default function PropertyProfilePage() {
   }
 
   if (isLoading) return <div className="p-8 text-gray-500 font-bold">Loading Property Profile...</div>;
-  
-  if (fetchError) return (
-    <div className="p-8 m-8 bg-red-50 border-l-4 border-red-600 rounded-r-lg shadow-sm">
-      <h3 className="text-red-800 font-bold text-lg">Database Error</h3>
-      <p className="text-red-600 font-mono mt-2">{fetchError}</p>
-    </div>
-  );
-
+  if (fetchError) return <div className="p-8 m-8 bg-red-50 border-l-4 border-red-600 rounded-r-lg shadow-sm"><h3 className="text-red-800 font-bold text-lg">Database Error</h3><p className="text-red-600 font-mono mt-2">{fetchError}</p></div>;
   if (!property) return <div className="p-8 text-gray-500">Property not found.</div>;
 
   return (
     <>
       <header className="bg-white border-b border-gray-200 px-8 py-4 flex justify-between items-center">
-        <div>
-          <a href="/properties" className="text-sm text-blue-600 hover:underline mb-1 inline-block">← Back to Portfolio</a>
-          <h2 className="text-2xl font-bold text-gray-800">{property.name}</h2>
-        </div>
+        <div><a href="/properties" className="text-sm text-blue-600 hover:underline mb-1 inline-block">← Back to Portfolio</a><h2 className="text-2xl font-bold text-gray-800">{property.name}</h2></div>
         <div className="flex space-x-2 bg-gray-100 p-1 rounded-lg border border-gray-200">
           <button onClick={() => setActiveTab('details')} className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'details' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Details & Units</button>
           <button onClick={() => setActiveTab('siteplan')} className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'siteplan' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Interactive Site Plan</button>
@@ -191,18 +186,11 @@ export default function PropertyProfilePage() {
       </header>
 
       <main className="flex-1 overflow-y-auto p-8 bg-gray-100 relative">
-        
         {activeTab === 'details' && (
           <div className="space-y-6">
-            
             <div className="bg-red-50 border border-red-200 p-6 rounded-xl flex justify-between items-center shadow-sm">
-              <div>
-                <h3 className="font-bold text-red-800 text-lg">Property Disposition (Sale)</h3>
-                <p className="text-sm text-red-600 mt-1">If you have sold this asset, click here to terminate all active leases and archive the building.</p>
-              </div>
-              <button onClick={sellProperty} disabled={isSelling} className={`px-6 py-3 rounded-lg font-bold text-white transition shadow-sm ${isSelling ? 'bg-red-400' : 'bg-red-600 hover:bg-red-700'}`}>
-                {isSelling ? 'Processing...' : 'Mark as Sold'}
-              </button>
+              <div><h3 className="font-bold text-red-800 text-lg">Property Disposition (Sale)</h3><p className="text-sm text-red-600 mt-1">If you have sold this asset, click here to terminate all active leases and archive the building.</p></div>
+              <button onClick={sellProperty} disabled={isSelling} className={`px-6 py-3 rounded-lg font-bold text-white transition shadow-sm ${isSelling ? 'bg-red-400' : 'bg-red-600 hover:bg-red-700'}`}>{isSelling ? 'Processing...' : 'Mark as Sold'}</button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -213,20 +201,11 @@ export default function PropertyProfilePage() {
                   <div className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Address (Autocomplete)</label>
                     <input type="text" className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={address} onChange={(e) => handleAddressSearch(e.target.value)} />
-                    {suggestions.length > 0 && (
-                      <ul className="absolute z-50 w-full bg-white border border-gray-200 shadow-lg rounded-lg mt-1 max-h-48 overflow-y-auto">
-                        {suggestions.map((s, i) => (
-                          <li key={i} onClick={() => selectAddress(s)} className="p-3 hover:bg-blue-50 cursor-pointer text-sm border-b">{s.display_name}</li>
-                        ))}
-                      </ul>
-                    )}
+                    {suggestions.length > 0 && <ul className="absolute z-50 w-full bg-white border border-gray-200 shadow-lg rounded-lg mt-1 max-h-48 overflow-y-auto">{suggestions.map((s, i) => <li key={i} onClick={() => selectAddress(s)} className="p-3 hover:bg-blue-50 cursor-pointer text-sm border-b">{s.display_name}</li>)}</ul>}
                   </div>
                   <div className="bg-gray-50 p-3 rounded border border-gray-200">
                     <label className="block text-xs font-bold text-gray-700 mb-2">GPS Coordinates (Auto-filled or Manual Override)</label>
-                    <div className="flex space-x-2">
-                      <input type="number" step="any" placeholder="Latitude" className="w-1/2 border p-2 rounded text-sm outline-none" value={lat || ''} onChange={(e) => setLat(Number(e.target.value))} />
-                      <input type="number" step="any" placeholder="Longitude" className="w-1/2 border p-2 rounded text-sm outline-none" value={lng || ''} onChange={(e) => setLng(Number(e.target.value))} />
-                    </div>
+                    <div className="flex space-x-2"><input type="number" step="any" placeholder="Latitude" className="w-1/2 border p-2 rounded text-sm outline-none" value={lat || ''} onChange={(e) => setLat(Number(e.target.value))} /><input type="number" step="any" placeholder="Longitude" className="w-1/2 border p-2 rounded text-sm outline-none" value={lng || ''} onChange={(e) => setLng(Number(e.target.value))} /></div>
                   </div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1">Total Square Footage</label><input type="number" className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={sqft} onChange={(e) => setSqft(e.target.value)} /></div>
                 </div>
@@ -254,10 +233,7 @@ export default function PropertyProfilePage() {
                     <tbody className="divide-y divide-gray-200">
                       {spaces.map(s => (
                         <tr key={s.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-2 text-sm font-bold text-blue-600">{s.name}</td>
-                          <td className="px-4 py-2 text-sm text-gray-500 capitalize">{s.space_type}</td>
-                          <td className="px-4 py-2 text-sm text-gray-500">{s.square_footage} sqft</td>
-                          <td className="px-4 py-2 text-right"><button onClick={() => deleteSpace(s.id)} className="text-red-500 text-xs hover:underline">Delete</button></td>
+                          <td className="px-4 py-2 text-sm font-bold text-blue-600">{s.name}</td><td className="px-4 py-2 text-sm text-gray-500 capitalize">{s.space_type}</td><td className="px-4 py-2 text-sm text-gray-500">{s.square_footage} sqft</td><td className="px-4 py-2 text-right"><button onClick={() => deleteSpace(s.id)} className="text-red-500 text-xs hover:underline">Delete</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -280,29 +256,24 @@ export default function PropertyProfilePage() {
         {activeTab === 'siteplan' && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-[700px] flex flex-col">
             <div className="p-4 bg-slate-900 text-white flex justify-between items-center">
-              <div><h3 className="font-bold">Interactive Site Plan</h3><p className="text-xs text-slate-400">Click anywhere on the map to drop a pin for a Food Truck, Antenna, or Dumpster.</p></div>
-              <div className="flex space-x-4 text-xs font-bold"><span className="flex items-center"><span className="w-3 h-3 bg-blue-500 rounded-full mr-2 border border-white"></span> Tenants/Spaces</span><span className="flex items-center"><span className="w-3 h-3 bg-orange-500 rounded-full mr-2 border border-white"></span> Physical Assets</span></div>
+              <div><h3 className="font-bold">Interactive Site Plan</h3><p className="text-xs text-slate-400">Click map to drop pins.</p></div>
+              <div className="flex space-x-4 text-xs font-bold"><span className="flex items-center"><span className="w-3 h-3 bg-blue-500 rounded-full mr-2 border border-white"></span> Tenants</span><span className="flex items-center"><span className="w-3 h-3 bg-orange-500 rounded-full mr-2 border border-white"></span> Assets</span></div>
             </div>
             <div className="flex-1 relative z-0">
               {lat && lng ? (
                 <MapContainer center={[lat, lng]} zoom={19} scrollWheelZoom={true} style={{ height: '100%', width: '100%', zIndex: 0 }}>
                   <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution="Tiles &copy; Esri" />
                   <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
+                  <MapUpdater lat={lat} lng={lng} />
                   <MapClickHandler />
                   {spaces.filter(s => s.lat && s.lng).map(s => (
-                    <Marker key={s.id} position={[s.lat, s.lng]} icon={iconSpace}>
-                      <Popup><div className="text-center"><strong className="text-blue-600 block">{s.name}</strong><span className="text-xs text-gray-500 block">{s.space_type}</span>{s.leases?.[0] && <span className="mt-1 bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold block">Leased to: {s.leases[0].tenants?.name}</span>}</div></Popup>
-                    </Marker>
+                    <Marker key={s.id} position={[s.lat, s.lng]} icon={iconSpace}><Popup><div className="text-center"><strong className="text-blue-600 block">{s.name}</strong><span className="text-xs text-gray-500 block">{s.space_type}</span>{s.leases?.[0] && <span className="mt-1 bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold block">Leased to: {s.leases[0].tenants?.name}</span>}</div></Popup></Marker>
                   ))}
                   {assets.filter(a => a.lat && a.lng).map(a => (
-                    <Marker key={a.id} position={[a.lat, a.lng]} icon={iconAsset}>
-                      <Popup><div className="text-center"><strong className="text-orange-600 block">{a.name}</strong><span className="text-xs text-gray-500 block">{a.asset_type}</span></div></Popup>
-                    </Marker>
+                    <Marker key={a.id} position={[a.lat, a.lng]} icon={iconAsset}><Popup><div className="text-center"><strong className="text-orange-600 block">{a.name}</strong><span className="text-xs text-gray-500 block">{a.asset_type}</span></div></Popup></Marker>
                   ))}
                 </MapContainer>
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center bg-gray-50"><div className="text-4xl mb-4">📍</div><p className="text-gray-500 font-medium">Please use the Address Autocomplete in the Details tab to set the GPS coordinates for this property first!</p></div>
-              )}
+              ) : <div className="h-full flex flex-col items-center justify-center bg-gray-50"><div className="text-4xl mb-4">📍</div><p className="text-gray-500 font-medium">Please set GPS coordinates in Details tab first!</p></div>}
             </div>
           </div>
         )}

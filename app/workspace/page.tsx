@@ -6,63 +6,81 @@ import { useOrg } from '@/app/context/OrgContext';
 export default function WorkspacePage() {
   const { orgId } = useOrg();
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
-  const[isSyncing, setIsSyncing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
   const [emails, setEmails] = useState<any[]>([]);
-  const[accounts, setAccounts] = useState<string[]>([]);
+  const [accounts, setAccounts] = useState<string[]>([]);
   const [selectedAccount, setSelectedAccount] = useState('ALL');
   const [sortOrder, setSortOrder] = useState('newest');
   
-  const[properties, setProperties] = useState<any[]>([]);
-  const [taskModalEmail, setTaskModalEmail] = useState<any>(null);
+  const [properties, setProperties] = useState<any[]>([]);
+  const[taskModalEmail, setTaskModalEmail] = useState<any>(null);
   const [selectedPropertyId, setSelectedPropertyId] = useState('');
-  const[syncError, setSyncError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
-  const [viewingEmail, setViewingEmail] = useState<any>(null);
+  const[viewingEmail, setViewingEmail] = useState<any>(null);
   const [isComposing, setIsComposing] = useState(false);
-  const[composeFrom, setComposeFrom] = useState('');
-  const [composeTo, setComposeTo] = useState('');
-  const[composeSubject, setComposeSubject] = useState('');
+  const [composeFrom, setComposeFrom] = useState('');
+  const[composeTo, setComposeTo] = useState('');
+  const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
-  const[isSending, setIsSending] = useState(false);
-  const [isActioning, setIsActioning] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const[isActioning, setIsActioning] = useState(false);
+
+  // NEW: Track the current user to ensure email privacy
+  const[currentUserEmail, setCurrentUserEmail] = useState('');
 
   useEffect(() => {
-    if (orgId) { 
+    async function getUser() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.email) setCurrentUserEmail(session.user.email);
+    }
+    getUser();
+  },[]);
+
+  useEffect(() => {
+    // Catch URL errors from the Google Callback
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlError = urlParams.get('error');
+    if (urlError) {
+      setSyncError(`Authentication Failed: ${urlError}`);
+      window.history.replaceState(null, '', '/workspace');
+    }
+
+    if (orgId && currentUserEmail) { 
       fetchProperties(); 
       loadLocalDataAndSync(); 
     }
-  }, [orgId]);
+  },[orgId, currentUserEmail]);
 
   async function fetchProperties() {
     const { data } = await supabase.from('properties').select('*').order('name');
     if (data) setProperties(data);
   }
 
-  // FIX: Load local database emails instantly, then sync Google in the background!
   async function loadLocalDataAndSync() {
+    setIsLoading(true); setSyncError(null);
     try {
-      const { data: tokens } = await supabase.from('google_tokens').select('*').eq('organization_id', orgId);
+      // ONLY fetch tokens added by this specific user
+      const { data: tokens } = await supabase.from('google_tokens').select('*').eq('organization_id', orgId).eq('added_by_user', currentUserEmail);
       if (tokens && tokens.length > 0) {
         setIsGoogleConnected(true);
         const connectedEmails = tokens.map(t => t.user_email);
         setAccounts(connectedEmails);
         if (connectedEmails.length > 0) setComposeFrom(connectedEmails[0]);
 
-        // Load instantly from DB
-        const { data: dbEmails } = await supabase.from('email_inbox').select('*').order('date', { ascending: false });
+        const { data: dbEmails } = await supabase.from('email_inbox').select('*').in('account_email', connectedEmails).order('date', { ascending: false });
         if (dbEmails) setEmails(dbEmails);
         
-        setIsLoading(false); // DROP THE LOADING SCREEN INSTANTLY
+        setIsLoading(false); // Drop loading screen instantly
 
-        // Now run the heavy Google Sync silently in the background
         setIsSyncing(true);
-        const res = await fetch(`/api/google-workspace?orgId=${orgId}`);
+        const res = await fetch(`/api/google-workspace?orgId=${orgId}&userEmail=${encodeURIComponent(currentUserEmail)}`);
         const data = await res.json();
         if (data.error) setSyncError(`Google API Error: ${data.error}`);
         else if (data.synced > 0) {
-          const { data: newDbEmails } = await supabase.from('email_inbox').select('*').order('date', { ascending: false });
+          const { data: newDbEmails } = await supabase.from('email_inbox').select('*').in('account_email', connectedEmails).order('date', { ascending: false });
           if (newDbEmails) setEmails(newDbEmails);
         }
         setIsSyncing(false);
@@ -75,24 +93,26 @@ export default function WorkspacePage() {
   async function manualSync() {
     setIsSyncing(true); setSyncError(null);
     try {
-      const res = await fetch(`/api/google-workspace?orgId=${orgId}`);
+      const res = await fetch(`/api/google-workspace?orgId=${orgId}&userEmail=${encodeURIComponent(currentUserEmail)}`);
       const data = await res.json();
       if (data.error) setSyncError(`Google API Error: ${data.error}`);
       else {
         alert(`Sync complete! Found ${data.synced || 0} new emails.`);
         if (data.accounts) setAccounts(data.accounts);
-        const { data: dbEmails } = await supabase.from('email_inbox').select('*').order('date', { ascending: false });
+        const { data: dbEmails } = await supabase.from('email_inbox').select('*').in('account_email', data.accounts ||[]).order('date', { ascending: false });
         if (dbEmails) setEmails(dbEmails);
       }
     } catch (e: any) { setSyncError(e.message); } finally { setIsSyncing(false); }
   }
 
   async function connectNewGoogleAccount() {
-    if (!orgId) return;
+    if (!orgId || !currentUserEmail) return alert("Missing credentials. Please refresh.");
     try {
-      const res = await fetch(`/api/google-auth?state=${orgId}`);
+      // Pass BOTH orgId and userEmail securely through the state parameter
+      const res = await fetch(`/api/google-auth?state=${orgId}:::${currentUserEmail}`);
       const data = await res.json();
       if (data.url) window.location.href = data.url;
+      else setSyncError("Failed to generate Google Login URL.");
     } catch (error: any) { setSyncError("Error connecting: " + error.message); }
   }
 
@@ -128,7 +148,6 @@ export default function WorkspacePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-
       if (action === 'archive' || action === 'trash') {
         setEmails(emails.filter(e => e.id !== viewingEmail.id));
         setViewingEmail(null);
@@ -138,16 +157,10 @@ export default function WorkspacePage() {
 
   function openComposeModal() { setComposeTo(''); setComposeSubject(''); setComposeBody(''); setIsComposing(true); }
 
-  // FIX: Strict Mathematical Sorting
   let filteredEmails = selectedAccount === 'ALL' ? [...emails] : emails.filter(e => e.account_email === selectedAccount);
-  
-  if (sortOrder === 'newest') {
-    filteredEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  } else if (sortOrder === 'oldest') {
-    filteredEmails.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  } else if (sortOrder === 'sender') {
-    filteredEmails.sort((a, b) => a.sender.localeCompare(b.sender));
-  }
+  if (sortOrder === 'newest') filteredEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  else if (sortOrder === 'oldest') filteredEmails.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  else if (sortOrder === 'sender') filteredEmails.sort((a, b) => a.sender.localeCompare(b.sender));
 
   if (isLoading) return <div className="p-8 text-center text-gray-500">Loading Workspace...</div>;
 
@@ -168,7 +181,7 @@ export default function WorkspacePage() {
         {syncError && <div className="mb-8 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm"><h3 className="text-red-800 font-bold">Diagnostic Alert:</h3><p className="text-red-600 font-mono text-sm mt-1">{syncError}</p></div>}
 
         {!isGoogleConnected ? (
-          <div className="bg-white p-12 rounded-xl shadow-sm border border-gray-200 text-center max-w-2xl mx-auto mt-10"><div className="text-5xl mb-4">📧</div><h3 className="text-2xl font-bold text-gray-800 mb-2">Connect Your Inboxes</h3><button onClick={connectNewGoogleAccount} className="mt-6 bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold transition shadow-sm text-lg">Authenticate with Google</button></div>
+          <div className="bg-white p-12 rounded-xl shadow-sm border border-gray-200 text-center max-w-2xl mx-auto mt-10"><div className="text-5xl mb-4">📧</div><h3 className="text-2xl font-bold text-gray-800 mb-2">Connect Your Inboxes</h3><p className="text-gray-500 mb-6">Link your property-specific Gmail accounts to view them all in one place.</p><button onClick={connectNewGoogleAccount} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold transition shadow-sm text-lg">Authenticate with Google</button></div>
         ) : (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[calc(100vh-150px)]">
             <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center rounded-t-xl">
@@ -193,6 +206,7 @@ export default function WorkspacePage() {
                   </div>
                 </div>
               ))}
+              {filteredEmails.length === 0 && <p className="p-8 text-center text-gray-500">Inbox Zero! No emails found.</p>}
             </div>
           </div>
         )}
@@ -239,7 +253,7 @@ export default function WorkspacePage() {
               <h3 className="text-xl font-bold mb-2 text-gray-800">Convert Email to Task</h3>
               <div className="bg-gray-50 p-3 rounded border border-gray-200 mb-4 text-sm"><p className="font-bold truncate">{taskModalEmail.subject}</p><p className="text-gray-500 text-xs truncate mt-1">From: {taskModalEmail.sender}</p></div>
               <form onSubmit={convertToTask} className="space-y-4">
-                <div><label className="block text-sm font-bold text-gray-700 mb-1">Link to Property</label><select className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={selectedPropertyId} onChange={(e) => setSelectedPropertyId(e.target.value)}><option value="">-- General Task --</option>{properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+                <div><label className="block text-sm font-bold text-gray-700 mb-1">Link to Property (Optional)</label><select className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={selectedPropertyId} onChange={(e) => setSelectedPropertyId(e.target.value)}><option value="">-- General Task --</option>{properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
                 <div className="flex justify-end space-x-3 pt-4 border-t"><button type="button" onClick={() => setTaskModalEmail(null)} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded font-medium">Cancel</button><button type="submit" className="px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded font-bold transition shadow-sm">Create Task</button></div>
               </form>
             </div>
