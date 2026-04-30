@@ -6,7 +6,7 @@ import { useOrg } from '@/app/context/OrgContext';
 export default function CustomViewsPage() {
   const { orgId } = useOrg();
   const [views, setViews] = useState<any[]>([]);
-  const [activeView, setActiveView] = useState<any>(null);
+  const[activeView, setActiveView] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -15,11 +15,11 @@ export default function CustomViewsPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [files, setFiles] = useState<any[]>([]);
   const [comms, setComms] = useState<any[]>([]);
-  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
+  const[calendarEvents, setCalendarEvents] = useState<any[]>([]);
 
   // New View Form State
-  const [viewName, setViewName] = useState('');
-  const[selectedWidgets, setSelectedWidgets] = useState<string[]>([]);
+  const[viewName, setViewName] = useState('');
+  const [selectedWidgets, setSelectedWidgets] = useState<string[]>([]);
 
   const AVAILABLE_WIDGETS =[
     { id: 'inbox', name: '📧 Gmail Inbox', desc: 'Recent unread emails' },
@@ -31,7 +31,7 @@ export default function CustomViewsPage() {
 
   useEffect(() => {
     if (orgId) { fetchViews(); fetchWidgetData(); }
-  }, [orgId]);
+  },[orgId]);
 
   async function fetchViews() {
     const { data } = await supabase.from('custom_views').select('*').order('created_at', { ascending: true });
@@ -43,8 +43,7 @@ export default function CustomViewsPage() {
   }
 
   async function fetchWidgetData() {
-    // Fetch data for all widgets simultaneously
-    const [emailRes, taskRes, fileRes, commsRes, leaseRes, tourRes] = await Promise.all([
+    const[emailRes, taskRes, fileRes, commsRes, leaseRes, tourRes] = await Promise.all([
       supabase.from('email_inbox').select('*').order('date', { ascending: false }).limit(10),
       supabase.from('tasks').select('*, properties(name)').neq('status', 'Done').order('created_at', { ascending: false }).limit(10),
       supabase.storage.from('documents').list(),
@@ -58,8 +57,9 @@ export default function CustomViewsPage() {
     if (fileRes.data) setFiles(fileRes.data.filter(f => f.name !== '.emptyFolderPlaceholder').slice(0, 10));
     if (commsRes.data) setComms(commsRes.data);
 
-    // Combine Leases and Tours for the Calendar Widget
-    const calData =[];
+    // FIX: Added ': any[]' to satisfy TypeScript strict mode
+    const calData: any[] =[];
+    
     leaseRes.data?.forEach(l => calData.push({ title: `Lease Expiry: ${l.tenants?.name}`, date: l.end_date, type: 'lease' }));
     tourRes.data?.forEach(t => calData.push({ title: `Tour: ${t.prospect_name} at ${t.properties?.name}`, date: t.tour_date, type: 'tour' }));
     calData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -102,7 +102,6 @@ export default function CustomViewsPage() {
         </button>
       </header>
 
-      {/* TABS FOR DIFFERENT VIEWS */}
       <div className="bg-white border-b border-gray-200 px-8 py-2 flex space-x-2 overflow-x-auto">
         {views.map(view => (
           <button 
@@ -117,7 +116,6 @@ export default function CustomViewsPage() {
       </div>
 
       <main className="flex-1 overflow-y-auto p-8 bg-gray-100">
-        
         {activeView ? (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -125,9 +123,7 @@ export default function CustomViewsPage() {
               <button onClick={() => deleteView(activeView.id)} className="text-red-500 text-sm font-bold hover:underline">Delete View</button>
             </div>
 
-            {/* DYNAMIC WIDGET GRID */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              
               {activeView.widgets.includes('inbox') && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[400px]">
                   <div className="p-4 bg-blue-50 border-b border-blue-100 flex justify-between items-center rounded-t-xl">
@@ -217,7 +213,6 @@ export default function CustomViewsPage() {
                   </div>
                 </div>
               )}
-
             </div>
           </div>
         ) : (
@@ -228,7 +223,6 @@ export default function CustomViewsPage() {
           </div>
         )}
 
-        {/* CREATE VIEW MODAL */}
         {isModalOpen && (
           <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
@@ -262,7 +256,6 @@ export default function CustomViewsPage() {
             </div>
           </div>
         )}
-
       </main>
     </>
   );
